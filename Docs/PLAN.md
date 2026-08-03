@@ -535,3 +535,22 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   it triggers the user-initiated usage refresh, which raises a Keychain password prompt.
   The prompt was left untouched and cancelled by quitting the app; the captures (which also
   held unrelated private content) were deleted. Don't automate hover over the notch.
+- **2026-08-04 (site panel ported from the app instead of guessed)** — the mockup had an
+  invented pets-and-label strip row inside the *open* panel. That row is the COLLAPSED
+  state; `PanelHeaderView` shows a usage pill, a close button, then sound and settings
+  pushed right, and nothing else. Rebuilt the site panel against the real sources rather
+  than by eye:
+  `PanelHeaderView` — 34pt row, padding 10/14/4; usage pill on `rgba(255,255,255,.07)` at
+  radius 7, provider mark on a 17x17 tile at radius 4.5 filled `rgb(.85,.35,.13)` = #D9591F,
+  segments `5h 62% ↻1h12m | 7d 18% ↻4d6h` at 10.5pt mono with the `|` at white 25%.
+  `SessionChip` — 10.5pt semibold, padding 7/3, radius 6; the Claude chip is #E89957 on
+  #4D3019, everything else white .72 on white .10.
+  `SessionCardView` — pet in a 44pt centred column, 12pt gap, 14pt bold title, rows flat on
+  black with the white-6% fill as hover/focus rather than a permanent card.
+  Verified: tile renders `rgb(217,89,31)`, Claude chip `rgb(77,48,25)`/`rgb(232,153,87)`,
+  pet column 44px, strip gone, no JS errors, 4 tabs → 4 distinct states, pets still flipping
+  2 frames on the 450ms cadence, no overflow at 375/768/1440, menu bar visible both sides.
+  **Measurement note:** the crab's two frames have identical markup length, and 1000ms is
+  ~2 flips (same parity), so both `innerHTML.length` and a single 1s before/after comparison
+  read as "frozen" when the animation is fine. Sample several times at sub-cadence intervals
+  and compare content.
