@@ -569,3 +569,28 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   after the pointer arrives (470px, strip hidden), header `display:flex` with icons 14/31px
   off the right edge, a scene click opens it and renders that scene, hover rule present,
   no overflow at 375/768/1440.
+- **2026-08-04 (island expansion now uses the app's actual spring)** — the web mockup eased
+  open with `cubic-bezier(.32,.72,0,1)` over 340ms, which is why it felt unlike macOS.
+  `TokenIslandNotchView.notchAnimation` is
+  `.interactiveSpring(response: 0.42, dampingFraction: 0.80, blendDuration: 0.12)` applied
+  to BOTH `state` and `visibleSize` — an underdamped spring, and a cubic-bezier is
+  monotonic so it structurally cannot express the settle.
+  Sampled the damped-oscillator solution (w0 = 2pi/0.42 = 14.96 rad/s, zeta = 0.80,
+  wd = 8.976) into a 49-stop CSS `linear()`: 577ms to settle, peak 1.0152 at 60% of the
+  duration, non-monotonic. Also ported the per-state geometry from
+  `topRadius`/`bottomRadius`/`shadowRadius`/`shadowOpacity` at the shipped defaults
+  (islandCornerRadius 32, shadowIntensity 0.58): collapsed 5/17.9px with
+  `0 5px 10px rgba(0,0,0,.08)`, open 8/32px with `0 18px 50px rgba(0,0,0,.58)`, all three
+  properties riding the same spring. Added `overflow:hidden` to match the app's
+  `.clipShape(TokenIslandNotchShape)`, so the panel is revealed by the island growing over
+  it rather than appearing beside it.
+  Token clash caught: `--spring` was already defined (and redefined *after* mine) for
+  button/card micro-interactions, so the island's spring lost the cascade — renamed to
+  `--island-spring`/`--island-dur`.
+  Verified: easing resolves to `linear(0 0%, 0.0147 2.08%, ...)`, duration 0.577s, closed
+  232px / open 470px with the right radii and shadows, chips stay on one 24px row in all
+  three cards, zero external refs.
+  **Measurement note:** headless `--virtual-time-budget` freezes CSS transitions partway, so
+  a still can catch the island at collapsed width with open content — that is the harness,
+  not a layout bug. And `requestAnimationFrame` is throttled in an offscreen iframe, so the
+  curve cannot be sampled that way; assert on the resolved `linear()` stops instead.
