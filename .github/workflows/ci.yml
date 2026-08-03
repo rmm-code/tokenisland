@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+  bundle:
+    name: Universal app bundle
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches the class of bug where the app builds host-arch only and is
+      # silently unusable on Intel Macs.
+      - name: Build universal binary
+        run: swift build -c release --arch x86_64 --arch arm64
+
+      - name: Verify both architectures are present
+        run: |
+          BIN="$(swift build -c release --arch x86_64 --arch arm64 --show-bin-path)/TokenIsland"
+          lipo -info "$BIN"
+          lipo -info "$BIN" | grep -q x86_64
+          lipo -info "$BIN" | grep -q arm64

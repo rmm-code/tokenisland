@@ -1,0 +1,44 @@
+# Build output
+.build/
+.swiftpm/
+*.dSYM/
+DerivedData/
+
+# Bundled app + generated icon
+*.app/
+AppIcon.icns
+
+# Reference material from the app this project was benchmarked against.
+# 337 MB of third-party screenshots and screen recordings — not ours to
+# redistribute, and far past GitHub's per-file limit.
+island/
+
+# Detailed UI spec of that third-party app. Local research only.
+Docs/VIBE_ISLAND_BLUEPRINT.md
+
+# Marketing site — tracked separately, not part of the app source.
+Website/
+
+# Promo video project: 738 MB, has its own git repo and node_modules.
+promo/
+
+# Local debug captures and scratch evidence (276 MB)
+outputs/
+
+# Local-only helper that hardcodes a developer path
+Scripts/clean_desktop.sh
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Editors
+.idea/
+*.xcuserstate
+xcuserdata/
+*.swp
+
+# Runtime state written by the app
+last-exception.log
