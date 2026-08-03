@@ -554,3 +554,18 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   ~2 flips (same parity), so both `innerHTML.length` and a single 1s before/after comparison
   read as "frozen" when the animation is fine. Sample several times at sub-cadence intervals
   and compare content.
+- **2026-08-04 (site demo starts closed, hover opens it)** — the mockup sat permanently
+  expanded, which skipped the actual interaction and left no reason for it to be open.
+  The island now starts COLLAPSED (232px: walking pets, lead session, count — the strip
+  that belongs to that state) and expands to 470px on real `:hover`/`:focus-within`, the
+  same declaration block the scene buttons drive via `.open`. A drawn pointer walks up into
+  the island when the demo opens it unattended, and yields to `opacity:0` the moment a real
+  pointer enters the stage, so an auto-opened panel reads as "something hovered it".
+  Reduced motion holds it open with no pointer choreography.
+  Bug found and fixed on the way: the open rule set `.phead{display:block}`, which killed
+  its flex layout so the spacer stopped pushing sound/settings to the right edge — now
+  `flex` for the header and `block` for the list.
+  Verified in a fresh frame: closed at load (232px, strip visible, pointer shown), open
+  after the pointer arrives (470px, strip hidden), header `display:flex` with icons 14/31px
+  off the right edge, a scene click opens it and renders that scene, hover rule present,
+  no overflow at 375/768/1440.
