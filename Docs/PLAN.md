@@ -491,3 +491,19 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   clamps near 500px and misreports mobile), 4 tabs → 4 distinct DOM states with the right
   attachment each, roving tabindex correct (one selected, one tabbable, Arrow/Home move
   focus), no pixel type in headings, heading order with no skipped levels.
+- **2026-08-03 (repository scaffolded and pushed)** — `git init` → `rmm-code/tokenisland`
+  (private, `main`). Added `.gitignore`, MIT `LICENSE`, `README.md`, `CONTRIBUTING.md` and
+  a GitHub Actions CI workflow (build + test on macos-14, plus a job that builds the
+  universal binary and asserts `lipo` reports both slices — the exact bug that shipped an
+  Intel-incompatible app). Initial commit: 179 files, 1.2 MB.
+  Excluded by `.gitignore`, all confirmed absent on the remote: `island/` (337 MB of the
+  reference app's screenshots and recording — not ours to redistribute, and over GitHub's
+  file limit), `promo/` (738 MB, has its own nested `.git` and node_modules — would have
+  become a broken submodule), `outputs/` (276 MB of debug captures), `.build/` (1.1 GB),
+  `Website/` (per the user, tracked separately), and `Docs/VIBE_ISLAND_BLUEPRINT.md`.
+  Verified before pushing: no secrets, no files >200 KB, and no staged file referencing
+  `/Users/mardonjon`. Commit authored and committed as the user with no attribution
+  trailers, per their request.
+  **Open before flipping the repo public:** `CLAUDE.md` is tracked and still describes the
+  project as a recreation of Vibe Island and points at the (now untracked) `island/`
+  reference folder — that framing should be rewritten first.
