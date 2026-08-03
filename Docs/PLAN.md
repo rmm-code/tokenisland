@@ -507,3 +507,23 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   **Open before flipping the repo public:** `CLAUDE.md` is tracked and still describes the
   project as a recreation of Vibe Island and points at the (now untracked) `island/`
   reference folder — that framing should be rewritten first.
+- **2026-08-03 (site notch made faithful to the real thing)** — the mockup was a stylised
+  panel: a uniform black block covering the whole menu bar, with text-only provider tags.
+  Fixed three things against the source rather than by eye.
+  (1) **Silhouette.** On a real Mac only the camera housing interrupts the menu bar and the
+  panel hangs below it, so the shape is narrow-above-wide. `.notch` now starts below the
+  24px menu bar and a `::before` bridges up through it at the hardware width (measured
+  118px tab vs 256px panel). This also matches why `notchBandHeight` exists in
+  `TokenIslandScreenGeometry`: content drawn in that band is physically cut.
+  (2) **Real provider marks.** The Claude and Codex SVG paths are extracted straight out of
+  `Sources/TokenIslandKit/Resources/ProviderIcons/` into inline `<symbol>`s, so the site
+  can't drift from what the app ships. Claude keeps its own `#D97757`; Codex is the white
+  template mark. Verified rendered fill is `rgb(217,119,87)`.
+  (3) **Usage header** now leads with the provider mark and carries the reset countdown
+  (`5h 62%  7d 18%   resets in 1h 12m`), matching the panel-header pill.
+  Verified: 4/4 marks render non-zero, both symbols resolve, panel sits flush under the
+  menu bar, no overflow at 375/768/1440.
+  **Note:** capturing the real notch for reference was abandoned — warping the cursor into
+  it triggers the user-initiated usage refresh, which raises a Keychain password prompt.
+  The prompt was left untouched and cancelled by quitting the app; the captures (which also
+  held unrelated private content) were deleted. Don't automate hover over the notch.
