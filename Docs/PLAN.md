@@ -523,6 +523,14 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   (`5h 62%  7d 18%   resets in 1h 12m`), matching the panel-header pill.
   Verified: 4/4 marks render non-zero, both symbols resolve, panel sits flush under the
   menu bar, no overflow at 375/768/1440.
+  **Correction (same day):** the narrow-above-wide silhouette above was wrong. The island
+  is an overlay window that *covers* the menu bar (see the Status notes), so the black
+  starts at y=0 and the menu bar reads either side of it — no step. Reverted to a single
+  flush-topped panel and capped its width at `min(68%,470px)`; at 86% it swallowed the
+  whole bar on a narrow stage and stopped reading as a notch. Measured: flush at top and
+  118-174px of menu bar visible on both sides at 768/1100/1440. Wallpaper rebuilt from
+  diffuse radial blobs into swept SVG ribbons — the blobs read as "a gradient", the
+  ribbons read as a desktop, which is what makes the black island pop.
   **Note:** capturing the real notch for reference was abandoned — warping the cursor into
   it triggers the user-initiated usage refresh, which raises a Keychain password prompt.
   The prompt was left untouched and cancelled by quitting the app; the captures (which also
