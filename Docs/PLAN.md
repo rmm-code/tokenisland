@@ -614,3 +614,21 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   172.67.179.62), not the VPS, so it is not publicly live yet. Repoint the A record to
   79.143.176.109, then `certbot --nginx -d tokenisland.uz -d www.tokenisland.uz`
   (certbot 2.9.0 is installed).
+- **2026-08-04 (HTTPS fixed — the 443 half of the default_server hazard)** — after DNS was
+  pointed at the VPS, `http://tokenisland.uz` served the site correctly but
+  `https://tokenisland.uz` returned 307 -> /login showing **Sifatly's Next.js app**. Not a
+  Cloudflare problem: the deployed vhost only had `listen 80`, and Cloudflare proxies to the
+  origin on 443, where nginx found no server block for the host and fell through to the
+  first-loaded HTTPS vhost. Same default_server hazard identified during the survey, missed
+  on the 443 side. Confirmed by hitting the origin directly with `--resolve` (also 307), which
+  ruled Cloudflare out.
+  Fixed with `certbot --nginx -d tokenisland.uz` (apex only — `www` has no DNS record, so
+  including it would have failed HTTP-01). Vhost backed up to
+  `/root/tokenisland.uz.vhost.bak.*` first.
+  Verified: origin:443 -> 200/77939, public https -> 200/77939 with the right title,
+  0 hits for "sifatly" in the served HTML, cert CN=tokenisland.uz valid to 2026-11-02, and
+  sifatly/taomly/eiuedu/anorjon/tesol/texn/mardonjon.me all still 200 over HTTPS.
+  **Lesson:** on a multi-site box, a new vhost must cover BOTH 80 and 443 before DNS is
+  pointed, or the domain silently serves someone else's app over TLS.
+  Outstanding: no `www.tokenisland.uz` DNS record (Cloudflare flags it); add the record then
+  re-run certbot with `-d tokenisland.uz -d www.tokenisland.uz` if www is wanted.
