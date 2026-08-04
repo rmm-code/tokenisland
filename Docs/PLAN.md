@@ -594,3 +594,23 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   a still can catch the island at collapsed width with open content — that is the harness,
   not a layout bug. And `requestAnimationFrame` is throttled in an offscreen iframe, so the
   curve cannot be sampled that way; assert on the resolved `linear()` stops instead.
+- **2026-08-04 (site deployed to the VPS)** — the marketing site now lives in its own repo,
+  `rmm-code/tokenisland-web` (private), rather than in this one; `Website/` stays untracked
+  here. `variants/` and `REFERENCE_AUDIT.md` are gitignored out of it — the audit is
+  research on a competitor's site and has no business in a publishable repo.
+  Server: 79.143.176.109, Ubuntu 24.04, nginx, **~20 live client sites**. Surveyed
+  read-only first. Key hazard found: there is **no `default_server`**, so the bare IP is
+  answered by whichever vhost loads first — a careless config here would hijack traffic for
+  every other site. The vhost is therefore named-only (`tokenisland.uz www.tokenisland.uz`)
+  and explicitly not a default; `nginx -t` was run before any reload, and the reload was
+  graceful.
+  Deploy path: the server already had working `gh` auth, so it clones the private repo
+  directly — no new credentials were put on the box. Update with
+  `ssh root@79.143.176.109 'cd /var/www/tokenisland && git pull --ff-only'`.
+  Verified after reload: tokenisland.uz -> HTTP 200 / 77939 bytes with the right title,
+  `/.git/config` -> 403, and sifatly/taomly/eiuedu/anorjon/tesol/texn/mardonjon.me all
+  still answering 301 as before, with the bare IP still NOT serving our site.
+  **Still outstanding:** `tokenisland.uz` resolves to Cloudflare (104.21.83.172 /
+  172.67.179.62), not the VPS, so it is not publicly live yet. Repoint the A record to
+  79.143.176.109, then `certbot --nginx -d tokenisland.uz -d www.tokenisland.uz`
+  (certbot 2.9.0 is installed).
