@@ -28,11 +28,11 @@ sleep 1
 post "{\"session_id\":\"$SID_A\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Read\",\"tool_use_id\":\"t1\",\"tool_input\":{\"file_path\":\"$HOME/Desktop/vitamentor/src/checkout.ts\"},\"cwd\":\"$HOME/Desktop/vitamentor\"}" "A: PreToolUse Read"
 sleep 2
 
-post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\",\"cwd\":\"$HOME/Desktop/counter\",\"transcript_path\":\"/tmp/demo-b.jsonl\"}" "B: SessionStart"
+post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\",\"cwd\":\"$HOME/Desktop/tokenisland\",\"transcript_path\":\"/tmp/demo-b.jsonl\"}" "B: SessionStart"
 sleep 1
-post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"Fix unsupported content type error\",\"cwd\":\"$HOME/Desktop/counter\"}" "B: UserPromptSubmit"
+post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"Fix unsupported content type error\",\"cwd\":\"$HOME/Desktop/tokenisland\"}" "B: UserPromptSubmit"
 sleep 1
-post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"tool_use_id\":\"t2\",\"tool_input\":{\"description\":\"Search API endpoints\",\"subagent_type\":\"Explore\"},\"cwd\":\"$HOME/Desktop/counter\"}" "B: PreToolUse Task (subagent)"
+post "{\"session_id\":\"$SID_B\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"tool_use_id\":\"t2\",\"tool_input\":{\"description\":\"Search API endpoints\",\"subagent_type\":\"Explore\"},\"cwd\":\"$HOME/Desktop/tokenisland\"}" "B: PreToolUse Task (subagent)"
 sleep 2
 
 post "{\"session_id\":\"$SID_A\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Read\",\"tool_use_id\":\"t1\"}" "A: PostToolUse"

@@ -6,9 +6,25 @@ final class AppWindowRouter {
     private let appState: AppState
     private var dashboardWindowController: NSWindowController?
     private var settingsWindowController: NSWindowController?
+    private var onboardingWindowController: OnboardingWindowController?
 
     init(appState: AppState) {
         self.appState = appState
+    }
+
+    /// Replays the welcome + setup walkthrough. It otherwise appears exactly
+    /// once, on the first launch, and there was no way back to it — which is
+    /// where the integration list and permission explanations live.
+    func openWelcomeGuide() {
+        if let window = onboardingWindowController?.window {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let controller = OnboardingWindowController(appState: appState)
+        onboardingWindowController = controller
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func openDashboard() {

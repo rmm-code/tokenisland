@@ -8,6 +8,11 @@ enum AgentKind: String, Codable, CaseIterable, Sendable {
     case cursor
     case opencode
     case copilot
+    case qwen
+    case qoder
+    case trae
+    case codebuddy
+    case droid
     case other
 
     var displayName: String {
@@ -18,6 +23,11 @@ enum AgentKind: String, Codable, CaseIterable, Sendable {
         case .cursor: "Cursor"
         case .opencode: "OpenCode"
         case .copilot: "Copilot"
+        case .qwen: "Qwen"
+        case .qoder: "Qoder"
+        case .trae: "Trae"
+        case .codebuddy: "CodeBuddy"
+        case .droid: "Droid"
         case .other: "Agent"
         }
     }

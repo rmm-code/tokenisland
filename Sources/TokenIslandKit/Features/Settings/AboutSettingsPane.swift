@@ -23,6 +23,8 @@ struct AboutSettingsPane: View, SettingsPaneBindingProviding {
                 }
             }
 
+            updatesCard
+
             SettingsCard(title: "Data", subtitle: "Local token-usage history from the legacy counter.") {
                 SettingsButtonRow(
                     title: "Export usage data",
@@ -89,7 +91,7 @@ struct AboutSettingsPane: View, SettingsPaneBindingProviding {
         let candidates = [
             Bundle.main.resourceURL?.appendingPathComponent("Docs"),
             bundleURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Docs"),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/counter/Docs")
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/tokenisland/Docs")
         ].compactMap { $0 }
         return candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? bundleURL
     }
@@ -108,6 +110,52 @@ struct AboutSettingsPane: View, SettingsPaneBindingProviding {
             .resizable()
             .interpolation(.none)
         .frame(width: 74, height: 74)
+    }
+
+    /// State of the update feed. A locally built app has no feed to check, and
+    /// says so instead of pretending it is up to date.
+    @ViewBuilder
+    private var updatesCard: some View {
+        let checker = AppDelegate.environment?.updateChecker
+        SettingsCard(title: "Updates", subtitle: updatesSubtitle(checker)) {
+            SettingsToggleRow(
+                title: "Auto check for updates",
+                detail: "Check the release feed on launch and once an hour while running.",
+                isOn: boolBinding(\.autoCheckForUpdates, appState: appState)
+            )
+            if let update = checker?.available {
+                SettingsButtonRow(
+                    title: (checker?.canInstallInPlace == true ? "Install " : "Download ") + update.version,
+                    detail: checker?.canInstallInPlace == true
+                        ? "Downloads, verifies and restarts into the new version."
+                        : "A newer version is available.",
+                    role: nil,
+                    systemImage: "arrow.down.circle.fill"
+                ) {
+                    checker?.installOrOpenDownload()
+                }
+            }
+            SettingsButtonRow(
+                title: "Check now",
+                detail: "Ask the release feed straight away.",
+                role: nil,
+                systemImage: "arrow.clockwise"
+            ) {
+                checker?.checkNow()
+            }
+        }
+    }
+
+    private func updatesSubtitle(_ checker: UpdateChecker?) -> String {
+        guard let checker else { return "Update checks are unavailable." }
+        guard checker.isConfigured else {
+            return "This build has no release feed — updates are checked only in distributed builds."
+        }
+        if let error = checker.lastError { return error }
+        if checker.isChecking { return "Checking…" }
+        if let update = checker.available { return "Version \(update.version) is available." }
+        if checker.lastCheckedAt != nil { return "TokenIsland is up to date." }
+        return "Not checked yet."
     }
 
     private var versionText: String {

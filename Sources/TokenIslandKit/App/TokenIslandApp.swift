@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// The one seam the executable needs. Sparkle is linked there, not here, so
+/// the library stays framework-free and testable — the app hands its installer
+/// in before the environment is built.
+public enum TokenIslandLaunch {
+    @MainActor
+    public static func setUpdateInstaller(_ handler: @escaping () -> Void) {
+        AppEnvironment.updateInstaller = handler
+    }
+}
+
 public struct TokenIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState: AppState

@@ -45,6 +45,43 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
         XCTAssertEqual(snapshot.sevenDayUsedPercent, 0)
     }
 
+    /// Plans carry per-model weekly caps (Fable, Opus) beside the session and
+    /// weekly windows, and they change with the plan — every window the
+    /// endpoint reports has to reach the pill, not just a hardcoded pair.
+    func testEveryReportedWindowIsShownIncludingPerModelCaps() throws {
+        let snapshot = try XCTUnwrap(try decode("""
+        {
+          "five_hour": { "utilization": 33.0, "resets_at": "2026-04-11T07:00:00Z" },
+          "seven_day": { "utilization": 55.0 },
+          "seven_day_fable": { "utilization": 12.0 },
+          "seven_day_opus": { "utilization": 4.0 },
+          "account_uuid": "not-a-window"
+        }
+        """))
+
+        XCTAssertEqual(
+            snapshot.windows.map(\.label),
+            ["5h", "7d", "7d Fable"],
+            "session, then the weekly cap, then per-model caps — and no Opus, which Claude does not meter"
+        )
+        XCTAssertEqual(snapshot.headerText, "5h 33% · 7d 55% · 7d Fable 12%")
+        XCTAssertEqual(snapshot.windows.first?.resetsAt, UsageLimitsService.parseTimestamp("2026-04-11T07:00:00Z"))
+        XCTAssertEqual(snapshot.fiveHourUsedPercent, 33, "the named accessors still resolve")
+        XCTAssertEqual(snapshot.sevenDayUsedPercent, 55)
+    }
+
+    func testUnknownWindowsGetAReadableLabelInsteadOfBeingDropped() throws {
+        let snapshot = try XCTUnwrap(try decode("""
+        { "five_hour": { "utilization": 1.0 }, "thirty_day_mythos": { "utilization": 9.0 } }
+        """))
+        XCTAssertEqual(snapshot.windows.map(\.label), ["5h", "30d Mythos"])
+    }
+
+    func testCamelCaseWindowKeysAreTreatedAsTheSameWindow() {
+        XCTAssertEqual(UsageLimitsService.normalizedKey("fiveHour"), "five_hour")
+        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "sevenDayFable"), "7d Fable")
+    }
+
     func testTimestampParsingAcceptsTheShapesTheEndpointCanSend() throws {
         // Microseconds + offset (what Anthropic actually sends).
         XCTAssertNotNil(UsageLimitsService.parseTimestamp("2026-04-11T07:00:00.528743+00:00"))
@@ -83,10 +120,20 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let expected = UsageLimitsSnapshot(
-            fiveHourUsedPercent: 24,
-            fiveHourResetsAt: Date(timeIntervalSince1970: 100),
-            sevenDayUsedPercent: 41,
-            sevenDayResetsAt: Date(timeIntervalSince1970: 200),
+            windows: [
+                UsageLimitsWindow(
+                    key: "five_hour",
+                    label: "5h",
+                    usedPercent: 24,
+                    resetsAt: Date(timeIntervalSince1970: 100)
+                ),
+                UsageLimitsWindow(
+                    key: "seven_day",
+                    label: "7d",
+                    usedPercent: 41,
+                    resetsAt: Date(timeIntervalSince1970: 200)
+                )
+            ],
             fetchedAt: Date(timeIntervalSince1970: 50)
         )
         defaults.set(

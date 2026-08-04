@@ -386,8 +386,61 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   restores it to their entries alone, and a moved port reports repairable. Roster now Claude
   Code, Qwen, Qoder, Trae, CodeBuddy, Droid, Copilot, Codex, Gemini — all six new ones detect
   as "Needs setup" here, i.e. installed but not yet hooked. **179/179 tests green**.
-  Not done: Cursor speaks a different vocabulary (`beforeShellExecution`, `afterFileEdit`,
-  `subagentStart`) — a second family; Gemini-style (`BeforeTool`/`AfterTool`) is a third.
+  Then both remaining dialects landed, written against each CLI's published hooks reference
+  rather than guesswork: **Cursor** (`CursorHookRouter` — `conversation_id`/`session_id`,
+  `workspace_roots` array, `beforeSubmitPrompt`, `preToolUse`, and its *separate*
+  `beforeShellExecution`/`beforeMCPExecution`/`beforeReadFile` approval gates, `subagentStart`
+  with `tool_call_id`, `afterAgentResponse`) and **Gemini CLI** (`GeminiHookRouter` —
+  `BeforeAgent`/`AfterAgent` with `prompt`/`prompt_response`, `BeforeTool` as the approval
+  gate, snake_case tool names normalised to `Bash`/`Read`/`Edit`…). Approvals now answer in
+  the shape each CLI reads — Claude `hookSpecificOutput.permissionDecision`, Cursor
+  `permission`, Gemini `decision` — routed by the event's agent; sending the wrong shape reads
+  as "no opinion" and the CLI prompts in its own terminal. New `SessionEventKind
+  .assistantMessage` records agent text without ending the turn (Cursor reports it separately
+  from `stop`). Roster is now 10: Claude Code, Qwen, Qoder, Trae, CodeBuddy, Droid, Cursor,
+  Gemini CLI, Copilot, Codex. Also: the welcome/setup walkthrough could only ever be seen once
+  — added Settings → General → **Show Welcome Guide** (`AppWindowRouter.openWelcomeGuide`).
+  **191/191 tests green**; bundle rebuilt.
+  Then update delivery: `UpdateChecker` + `AppcastParser` read a **Sparkle-format appcast**
+  (deliberately — the same feed works unchanged when Sparkle's installer is dropped in), pick
+  the highest version above the running one, and publish it. Checked on launch and hourly,
+  rate-limited to 6h, gated by the `autoCheckForUpdates` setting — which was a dead toggle
+  removed in the capability audit and is now back *with* a consumer (the test that banned it
+  now asserts the consumer exists). UI: an "Update available — x.y.z" banner in the menu bar
+  popover, and an Updates card in About (state, Download, Check now). A build with no
+  `SUFeedURL` reports "no release feed" rather than claiming to be up to date.
+  **200/200 tests green**.
+  Then the release pipeline itself: the bundle now signs with the **hardened runtime** plus a
+  `com.apple.security.automation.apple-events` entitlement (without it a notarized build's
+  click-to-jump dies silently), takes its version from `TOKENISLAND_VERSION`, and carries
+  `SUFeedURL` → the repo's `releases/latest/download/appcast.xml`. `Scripts/release.sh` does
+  build → verify signature and entitlement → `ditto` zip → `notarytool submit --wait` →
+  `stapler staple` → re-zip with the staple → emit `appcast.xml` → print the `gh release create`
+  line. It refuses to run without a Developer ID certificate and explains how to make one, and
+  warns rather than pretends when no notary profile exists. `ReleasePipelineTests` round-trips
+  the script's own appcast heredoc through `UpdateChecker`, so the writer and the reader cannot
+  drift, and pins the distribution requirements (runtime, entitlement, timestamp, staple).
+  **204/204 tests green**.
+  The user then created a **Developer ID Application** certificate and stored a notary
+  profile, so the chain closed the same day: v0.2.0 built, notarized (Apple: Accepted),
+  stapled, published to GitHub Releases, repo made public, and the live feed verified by
+  feeding the real published appcast through `UpdateChecker` (0.1.0 → offers 0.2.0; 0.2.0 →
+  offers nothing).
+- **2026-08-04 (Sparkle: updates install themselves)** — Sparkle 2.9.5 via SwiftPM, linked by
+  the **executable only** so `swift test` never needs an embedded framework; the library
+  exposes one seam (`TokenIslandLaunch.setUpdateInstaller`) that `main.swift` fills with
+  `SparkleUpdaterBridge`, and `UpdateChecker.installOrOpenDownload()` uses it when present,
+  falling back to opening the release page when it is not. The build script embeds
+  `Sparkle.framework` in `Contents/Frameworks` and signs **inside-out** — XPC services,
+  Autoupdate and Updater.app individually, then the framework, then the app — because `--deep`
+  would re-stamp nested code with the app's identifier and break notarization. `SUPublicEDKey`
+  is in the plist; `release.sh` runs `sign_update` and splices `sparkle:edSignature` into the
+  enclosure, so Sparkle refuses anything not signed by the private key in the release
+  machine's keychain. Verified: app launches with `@rpath/Sparkle.framework` resolved, v0.2.1
+  notarized + stapled + signed, `spctl` accepted. `ReleasePipelineTests` now also pins the
+  embedding, the inside-out signing, and the presence of the signature.
+  **205/205 tests green**. Remaining: publish v0.2.1 and watch a 0.2.0 install update itself
+  (the last unproven link), then the terminal-jump matrix.
 - **2026-08-01 (idle sessions no longer read as "working")** — opening or resuming a CLI
   showed up as a blue, actively-working agent: `SessionReducer` set `phase = .working` on
   every `SessionStart`, and `synthesizeSession` defaulted the same way. With several

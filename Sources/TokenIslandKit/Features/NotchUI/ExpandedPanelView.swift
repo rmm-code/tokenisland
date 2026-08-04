@@ -28,15 +28,11 @@ struct PanelHeaderView: View {
     private var windows: [UsageWindow] {
         switch provider {
         case .claude:
-            guard let snapshot = usageLimits.snapshot else { return [] }
-            var result: [UsageWindow] = []
-            if let used = snapshot.fiveHourUsedPercent {
-                result.append(UsageWindow(label: "5h", usedPercent: used, resetsAt: snapshot.fiveHourResetsAt))
+            // Whatever the plan reports — session, weekly, and per-model caps
+            // like Fable — rather than a fixed pair.
+            return (usageLimits.snapshot?.windows ?? []).map {
+                UsageWindow(label: $0.label, usedPercent: $0.usedPercent, resetsAt: $0.resetsAt)
             }
-            if let used = snapshot.sevenDayUsedPercent {
-                result.append(UsageWindow(label: "7d", usedPercent: used, resetsAt: snapshot.sevenDayResetsAt))
-            }
-            return result
         case .gpt:
             return codexWindows.map { window in
                 var normalized = window

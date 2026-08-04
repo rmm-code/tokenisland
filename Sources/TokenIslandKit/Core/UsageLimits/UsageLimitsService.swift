@@ -2,26 +2,41 @@ import Foundation
 import LocalAuthentication
 import Security
 
+/// One usage window as the endpoint reports it. Plans carry a rolling session
+/// window and a weekly one, plus per-model weekly caps (Fable, Opus) that come
+/// and go with the plan — so windows are discovered, never hardcoded.
+struct UsageLimitsWindow: Codable, Equatable, Sendable, Identifiable {
+    /// The endpoint's own key, e.g. "five_hour", "seven_day_fable".
+    var key: String
+    /// What the pill shows: "5h", "7d", "7d Fable".
+    var label: String
+    var usedPercent: Double
+    var resetsAt: Date?
+
+    var id: String { key }
+}
+
 /// Subscription usage-limit windows shown in the panel header
-/// ("5h 11% · 7d 2%"), like the reference app.
+/// ("5h 11% · 7d 2% · 7d Fable 40%"), like the reference app.
 struct UsageLimitsSnapshot: Codable, Equatable, Sendable {
-    var fiveHourUsedPercent: Double?
-    var fiveHourResetsAt: Date?
-    var sevenDayUsedPercent: Double?
-    var sevenDayResetsAt: Date?
+    var windows: [UsageLimitsWindow] = []
     var fetchedAt: Date
 
     var headerText: String? {
-        var parts: [String] = []
-        if let fiveHourUsedPercent {
-            parts.append("5h \(Int(fiveHourUsedPercent.rounded()))%")
-        }
-        if let sevenDayUsedPercent {
-            parts.append("7d \(Int(sevenDayUsedPercent.rounded()))%")
-        }
-        guard !parts.isEmpty else { return nil }
-        return parts.joined(separator: " · ")
+        guard !windows.isEmpty else { return nil }
+        return windows
+            .map { "\($0.label) \(Int($0.usedPercent.rounded()))%" }
+            .joined(separator: " · ")
     }
+
+    private func window(_ key: String) -> UsageLimitsWindow? {
+        windows.first { $0.key == key }
+    }
+
+    var fiveHourUsedPercent: Double? { window("five_hour")?.usedPercent }
+    var fiveHourResetsAt: Date? { window("five_hour")?.resetsAt }
+    var sevenDayUsedPercent: Double? { window("seven_day")?.usedPercent }
+    var sevenDayResetsAt: Date? { window("seven_day")?.resetsAt }
 }
 
 /// Reads the local Claude Code OAuth credentials and asks the usage endpoint
@@ -110,7 +125,64 @@ final class UsageLimitsService: ObservableObject {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
 
+        // Key names only — no values, no token. Makes "why is window X missing"
+        // answerable from the log instead of by guessing at the plan's shape.
+        let reported = object.keys.sorted().joined(separator: ", ")
+        AppLog.app.info("usage endpoint reported keys: \(reported, privacy: .public)")
+
         return snapshot(fromUsageJSON: object, fetchedAt: Date())
+    }
+
+    /// `fiveHour` and `five_hour` are the same window.
+    nonisolated static func normalizedKey(_ key: String) -> String {
+        var result = ""
+        for character in key {
+            if character.isUppercase {
+                result.append("_")
+                result.append(Character(character.lowercased()))
+            } else {
+                result.append(character)
+            }
+        }
+        return result
+    }
+
+    /// "seven_day_fable" → "7d Fable". Unknown windows still get a readable
+    /// label rather than being dropped.
+    nonisolated static func windowLabel(forKey key: String) -> String {
+        let normalized = normalizedKey(key)
+        var remainder = normalized
+        var prefix: String?
+        for (candidate, short) in [("five_hour", "5h"), ("seven_day", "7d"), ("thirty_day", "30d")]
+        where normalized == candidate || normalized.hasPrefix(candidate + "_") {
+            prefix = short
+            remainder = String(normalized.dropFirst(candidate.count))
+        }
+        let suffix = remainder
+            .split(separator: "_")
+            .filter { !$0.isEmpty }
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+        return [prefix, suffix.isEmpty ? nil : suffix]
+            .compactMap { $0 }
+            .joined(separator: " ")
+    }
+
+    /// Claude meters no separate Opus percentage, so an `*_opus` window in the
+    /// payload is leftover plumbing rather than something the user can act on.
+    /// Delete a key here the day a plan starts tracking it for real.
+    nonisolated static let suppressedWindowKeys: Set<String> = [
+        "seven_day_opus",
+        "five_hour_opus"
+    ]
+
+    /// Session window first, then the plan's weekly cap, then per-model caps.
+    nonisolated static func windowOrder(_ key: String) -> Int {
+        if key == "five_hour" { return 0 }
+        if key == "seven_day" { return 1 }
+        if key.hasPrefix("five_hour") { return 2 }
+        if key.hasPrefix("seven_day") { return 3 }
+        return 4
     }
 
     /// Pure decode of the usage endpoint's body. Kept internal so the real
@@ -158,12 +230,32 @@ final class UsageLimitsService: ObservableObject {
             return nil
         }
 
-        let fiveHour = window(["five_hour", "fiveHour"])
-        let sevenDay = window(["seven_day", "sevenDay"])
-        snapshot.fiveHourUsedPercent = percent(from: fiveHour)
-        snapshot.fiveHourResetsAt = reset(from: fiveHour)
-        snapshot.sevenDayUsedPercent = percent(from: sevenDay)
-        snapshot.sevenDayResetsAt = reset(from: sevenDay)
+        // Every window the plan reports, in the order the pill should read
+        // them: session first, then the weekly cap, then per-model caps
+        // (Fable, Opus) — which appear, disappear and get renamed with the
+        // plan, so they are discovered rather than hardcoded.
+        var found: [UsageLimitsWindow] = []
+        for (key, value) in object {
+            let normalized = normalizedKey(key)
+            guard !suppressedWindowKeys.contains(normalized),
+                  let body = value as? [String: Any],
+                  let used = percent(from: body)
+            else {
+                continue
+            }
+            found.append(
+                UsageLimitsWindow(
+                    key: normalized,
+                    label: windowLabel(forKey: key),
+                    usedPercent: used,
+                    resetsAt: reset(from: body)
+                )
+            )
+        }
+        snapshot.windows = found.sorted { lhs, rhs in
+            let order = windowOrder(lhs.key) == windowOrder(rhs.key)
+            return order ? lhs.key < rhs.key : windowOrder(lhs.key) < windowOrder(rhs.key)
+        }
 
         guard snapshot.headerText != nil else { return nil }
         return snapshot

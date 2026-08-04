@@ -95,6 +95,14 @@ enum SessionReducer {
             session.pendingApprovalPreview = preview
             effects.append(.revealAttention(sessionID: session.id))
 
+        case .assistantMessage(let text):
+            // Records the text without touching the phase: the turn is still
+            // running, this is just the newest thing the agent said.
+            if let text, !text.isEmpty {
+                session.completionText = String(text.prefix(2000))
+                session.completionTLDR = condense(text, limit: 180)
+            }
+
         case .stopFailure(let message):
             session.phase = .error
             session.activity = nil

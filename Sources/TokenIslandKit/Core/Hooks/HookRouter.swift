@@ -27,9 +27,12 @@ enum HookRouter {
         return TerminalHint(termProgram: program, termSessionID: termSession, ttyPath: tty)
     }
 
+    /// `agent` names the CLI the payload came from — every Claude-family
+    /// derivative speaks this dialect, so only the route differs.
     static func decodeClaudeEvent(
         body: Data,
         headers: [String: String],
+        agent: AgentKind = .claude,
         timestamp: Date = Date()
     ) throws -> SessionEvent {
         guard let object = try? JSONSerialization.jsonObject(with: body),
@@ -43,7 +46,7 @@ enum HookRouter {
 
         let context = SessionEventContext(
             sessionID: sessionID,
-            agent: .claude,
+            agent: agent,
             cwd: json["cwd"] as? String,
             transcriptPath: json["transcript_path"] as? String,
             terminalHint: terminalHint(fromHeaders: headers),

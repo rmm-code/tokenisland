@@ -7,6 +7,7 @@ struct MenuBarPopoverView: View {
     var body: some View {
         VStack(spacing: 16) {
             header
+            updateBanner
             connectionStatus
             providerRows
             recent
@@ -97,6 +98,41 @@ struct MenuBarPopoverView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.regular)
+    }
+
+    /// Only present when there is genuinely something newer — a menu bar app
+    /// is checked at a glance, so a permanent "you're up to date" row would be
+    /// noise.
+    @ViewBuilder
+    private var updateBanner: some View {
+        if let checker = AppDelegate.environment?.updateChecker, let update = checker.available {
+            Button {
+                checker.installOrOpenDownload()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(PetPalette.tint(for: .ready))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Update available — \(update.version)")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(TITheme.primaryText)
+                        Text(checker.canInstallInPlace
+                             ? "Click to install and restart."
+                             : "Click to download the new version.")
+                            .font(.caption)
+                            .foregroundStyle(TITheme.secondaryText)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(PetPalette.tint(for: .ready).opacity(0.12))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Update available, version \(update.version)")
+        }
     }
 
     private var footerActions: some View {

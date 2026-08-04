@@ -3,10 +3,43 @@ import XCTest
 @testable import TokenIslandKit
 
 final class SettingsCapabilityTests: XCTestCase {
+    /// The roster may only list CLIs we genuinely integrate: Claude Code, the
+    /// Claude-family derivatives whose real config shape was verified before
+    /// being added, and the two file-watch adapters. Adding a name here has to
+    /// be a deliberate act, not a hopeful one.
     @MainActor
     func testIntegrationRosterContainsOnlyMonitoredAgents() {
         let registry = AdapterRegistry()
-        XCTAssertEqual(Set(registry.entries.map(\.id)), ["claude-code", "codex", "gemini-cli"])
+        XCTAssertEqual(
+            Set(registry.entries.map(\.id)),
+            [
+                // Claude dialect
+                "claude-code", "qwen-code", "qoder", "trae", "codebuddy", "droid", "copilot-cli",
+                // Their own dialects
+                "cursor-agent", "gemini-cli",
+                // File-watch
+                "codex"
+            ]
+        )
+    }
+
+    /// Every family member needs a distinct route and agent, or two CLIs would
+    /// land in the same session bucket.
+    func testHookFamilyRouteAndAgentAreUnique() {
+        let sources = HookFamilyCLI.roster.map(\.source)
+        XCTAssertEqual(Set(sources).count, sources.count, "duplicate hook route")
+        XCTAssertFalse(sources.contains("claude"), "claude's route belongs to Claude Code")
+
+        let agents = HookFamilyCLI.roster.map(\.agentKind)
+        XCTAssertEqual(Set(agents).count, agents.count, "duplicate agent kind")
+
+        for cli in HookFamilyCLI.roster {
+            XCTAssertEqual(
+                HookFamilyCLI.agentKind(forSource: cli.source),
+                cli.agentKind,
+                "\(cli.id) route does not resolve back to its agent"
+            )
+        }
     }
 
     func testSettingsDoNotExposeReservedOrPlaceholderCapabilities() throws {
@@ -19,9 +52,6 @@ final class SettingsCapabilityTests: XCTestCase {
         let integrations = try sourceFile(
             "Sources/TokenIslandKit/Features/Settings/IntegrationsSettingsPane.swift"
         )
-        let about = try sourceFile(
-            "Sources/TokenIslandKit/Features/Settings/AboutSettingsPane.swift"
-        )
         let display = try sourceFile(
             "Sources/TokenIslandKit/Features/Settings/DisplaySettingsPane.swift"
         )
@@ -33,9 +63,25 @@ final class SettingsCapabilityTests: XCTestCase {
         XCTAssertFalse(labs.contains("useAutoModeInsteadOfBypass"))
         XCTAssertFalse(integrations.contains("IDE Extensions"))
         XCTAssertFalse(integrations.contains("monitoring soon"))
-        XCTAssertFalse(about.contains("Auto check for updates"))
         XCTAssertFalse(display.contains("Hide in fullscreen"))
         XCTAssertFalse(sections.contains("sshRemote"))
+    }
+
+    /// Update checking used to be a dead toggle, which is why it was removed.
+    /// It may only be visible while something actually consumes it.
+    func testUpdateToggleHasARuntimeConsumer() throws {
+        let about = try sourceFile("Sources/TokenIslandKit/Features/Settings/AboutSettingsPane.swift")
+        let delegate = try sourceFile("Sources/TokenIslandKit/App/AppDelegate.swift")
+
+        XCTAssertTrue(about.contains("Auto check for updates"), "the control is back")
+        XCTAssertTrue(
+            delegate.contains("autoCheckForUpdates"),
+            "…and the setting gates a real check"
+        )
+        XCTAssertTrue(
+            delegate.contains("checkIfDue"),
+            "…which runs on launch and on a timer"
+        )
     }
 
     func testLegacyListenersAndThresholdNotificationsAreOptIn() {

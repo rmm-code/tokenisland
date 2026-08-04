@@ -72,6 +72,10 @@ enum SessionEventKind: Equatable, Sendable {
     /// from the notch (option labels capped at 9 for ⌃1–9 shortcuts).
     case question(text: String, options: [String])
     case notification(message: String?, category: SessionNotificationCategory)
+    /// The agent produced a message but the turn continues — Cursor reports
+    /// these separately from its `stop` event, so the completion card has
+    /// something to show when the turn does end.
+    case assistantMessage(text: String?)
     case stop(lastAssistantMessage: String?)
     /// The turn ended in an error (API failure, tool crash).
     case stopFailure(message: String?)

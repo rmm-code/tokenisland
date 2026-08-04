@@ -43,12 +43,35 @@ final class HookServer: @unchecked Sendable {
         case ("GET", "/health"):
             return .json(["status": "ok", "app": AppConstants.appName])
 
-        case ("POST", "/hook/claude"):
+        // The route's last segment says which CLI posted, which decides both
+        // the agent the session belongs to and the payload dialect.
+        case ("POST", let path) where path.hasPrefix("/hook/"):
+            let source = String(path.dropFirst("/hook/".count))
+            guard let agent = HookFamilyCLI.agentKind(forSource: source),
+                  let dialect = HookFamilyCLI.dialect(forSource: source)
+            else {
+                return .json(statusCode: 404, ["error": "unknown route"])
+            }
             do {
-                let event = try HookRouter.decodeClaudeEvent(
-                    body: request.body,
-                    headers: request.headers
-                )
+                let event: SessionEvent
+                switch dialect {
+                case .claude:
+                    event = try HookRouter.decodeClaudeEvent(
+                        body: request.body,
+                        headers: request.headers,
+                        agent: agent
+                    )
+                case .cursor:
+                    event = try CursorHookRouter.decode(
+                        body: request.body,
+                        headers: request.headers
+                    )
+                case .gemini:
+                    event = try GeminiHookRouter.decode(
+                        body: request.body,
+                        headers: request.headers
+                    )
+                }
                 if let payload = await sink(event) {
                     return HTTPResponse(
                         statusCode: 200,

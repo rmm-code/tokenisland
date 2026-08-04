@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var notchWindowController: TokenIslandWindowController?
     private var onboardingWindowController: OnboardingWindowController?
+    private var updateCheckTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installExceptionLogger()
@@ -21,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await environment.appState.start()
             notchWindowController?.showIfNeeded()
+            environment.updateChecker.checkIfDue(
+                enabled: environment.appState.settings.autoCheckForUpdates
+            )
+            startUpdateCheckLoop(environment: environment)
             if !environment.appState.settings.hasCompletedOnboarding {
                 onboardingWindowController = OnboardingWindowController(appState: environment.appState)
                 onboardingWindowController?.showWindow(nil)
@@ -30,6 +35,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// A long-running menu bar app rarely relaunches, so the launch check
+    /// alone would leave it on an old build for weeks. The checker itself is
+    /// rate-limited; this just gives it the chance.
+    private func startUpdateCheckLoop(environment: AppEnvironment) {
+        updateCheckTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3600))
+                guard !Task.isCancelled else { return }
+                environment.updateChecker.checkIfDue(
+                    enabled: environment.appState.settings.autoCheckForUpdates
+                )
+            }
+        }
     }
 
     /// macOS 26 occasionally throws Auto Layout exceptions in the display

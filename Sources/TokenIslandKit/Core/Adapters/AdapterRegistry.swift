@@ -23,7 +23,13 @@ final class AdapterRegistry: ObservableObject {
     }
 
     private static func roster() -> [any CLIAdapter] {
-        [ClaudeCodeAdapter(), CodexAdapter(), GeminiAdapter()]
+        // Claude first (the reference integration), then every Claude-family
+        // CLI from the descriptor roster, then the file-watch adapters.
+        var adapters: [any CLIAdapter] = [ClaudeCodeAdapter()]
+        adapters.append(contentsOf: HookFamilyCLI.roster.map { HookFamilyAdapter(cli: $0) })
+        adapters.append(CodexAdapter())
+        
+        return adapters
     }
 
     /// Everything present on this machine (for onboarding's "All Set" list).

@@ -90,6 +90,13 @@ struct GeneralSettingsPane: View, SettingsPaneBindingProviding {
                     isOn: boolBinding(\.disableClickToJump, appState: appState)
                 )
                 SettingsButtonRow(
+                    title: "Show Welcome Guide",
+                    detail: "Replay the setup walkthrough: detected CLIs, permissions, and how the notch works.",
+                    systemImage: "sparkles"
+                ) {
+                    AppDelegate.environment?.windowRouter.openWelcomeGuide()
+                }
+                SettingsButtonRow(
                     title: "Reset all settings",
                     detail: "Restore every option to its default value.",
                     role: .destructive,

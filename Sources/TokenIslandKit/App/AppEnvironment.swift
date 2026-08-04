@@ -2,6 +2,10 @@ import Foundation
 
 @MainActor
 final class AppEnvironment {
+    /// Set by the executable before the environment is built (Sparkle lives
+    /// there, so the library never links the framework).
+    nonisolated(unsafe) static var updateInstaller: (() -> Void)?
+
     let appState: AppState
     let repository: UsageRepository
     let settingsStore: SettingsStore
@@ -12,6 +16,7 @@ final class AppEnvironment {
     let titleMarkerService: TitleMarkerService
     let approvalCenter: ApprovalCenter
     let usageLimits: UsageLimitsService
+    let updateChecker: UpdateChecker
     /// Single deterministic opener for settings/dashboard windows — SwiftUI's
     /// scene-based actions are unreliable for accessory apps.
     private(set) lazy var windowRouter = AppWindowRouter(appState: appState)
@@ -29,6 +34,7 @@ final class AppEnvironment {
         titleMarkerService: TitleMarkerService,
         approvalCenter: ApprovalCenter,
         usageLimits: UsageLimitsService,
+        updateChecker: UpdateChecker,
         codexSessionWatcher: CodexSessionWatcher,
         geminiSessionWatcher: GeminiSessionWatcher
     ) {
@@ -42,6 +48,7 @@ final class AppEnvironment {
         self.titleMarkerService = titleMarkerService
         self.approvalCenter = approvalCenter
         self.usageLimits = usageLimits
+        self.updateChecker = updateChecker
         self.codexSessionWatcher = codexSessionWatcher
         self.geminiSessionWatcher = geminiSessionWatcher
     }
@@ -63,6 +70,10 @@ final class AppEnvironment {
         let adapterRegistry = AdapterRegistry(hookPort: AppConstants.defaultHookPort)
         let approvalCenter = ApprovalCenter()
         let usageLimits = UsageLimitsService()
+        let updateChecker = UpdateChecker()
+        // The executable injects Sparkle here when the framework is embedded;
+        // without it the checker falls back to opening the release page.
+        updateChecker.installHandler = AppEnvironment.updateInstaller
 
         // Codex has no hooks — a rollout-file watcher feeds the same store.
         let codexSessionWatcher = CodexSessionWatcher { event in
@@ -96,13 +107,13 @@ final class AppEnvironment {
 
             switch route {
             case .autoAllow:
-                return HookResponses.permission(.allow, reason: "Always allowed from the notch")
+                return HookResponses.permission(.allow, reason: "Always allowed from the notch", agent: event.context.agent)
             case .hold(let holdID):
                 let decision = await approvalCenter.wait(id: holdID)
                 await MainActor.run {
                     sessionStore.clearApprovalPending(sessionID: event.context.sessionID)
                 }
-                return HookResponses.permission(decision, reason: "Decided from the notch")
+                return HookResponses.permission(decision, reason: "Decided from the notch", agent: event.context.agent)
             case .none:
                 break
             }
@@ -189,6 +200,7 @@ final class AppEnvironment {
             titleMarkerService: titleMarkerService,
             approvalCenter: approvalCenter,
             usageLimits: usageLimits,
+            updateChecker: updateChecker,
             codexSessionWatcher: codexSessionWatcher,
             geminiSessionWatcher: geminiSessionWatcher
         )

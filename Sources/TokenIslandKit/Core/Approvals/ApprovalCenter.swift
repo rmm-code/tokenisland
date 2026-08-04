@@ -142,6 +142,25 @@ final class ApprovalCenter: ObservableObject {
 
 /// Serialized hook stdout payloads (single place that knows the schema).
 enum HookResponses {
+    /// Each CLI family answers an approval in its own shape: Claude Code with
+    /// `hookSpecificOutput`, Cursor with `permission`, Gemini with `decision`.
+    /// Sending the wrong one reads as "no opinion" and the CLI prompts in the
+    /// terminal anyway, so this has to match the source the event came from.
+    static func permission(
+        _ decision: ApprovalDecision,
+        reason: String,
+        agent: AgentKind
+    ) -> String? {
+        switch agent {
+        case .cursor:
+            return CursorHookRouter.permissionResponse(decision, reason: reason)
+        case .gemini:
+            return GeminiHookRouter.permissionResponse(decision, reason: reason)
+        default:
+            return permission(decision, reason: reason)
+        }
+    }
+
     static func permission(
         _ decision: ApprovalDecision,
         reason: String,
