@@ -372,6 +372,22 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   unparsed. **Gemini: not implementable** — the CLI is not installed here, `~/.gemini/tmp` does
   not exist, and the Gemini hook vocabulary has no subagent event; nothing to key on.
   **150/150 tests green**; bundle rebuilt.
+- **2026-07-27 (CLI families: 3 integrations → 9)** — most agent CLIs are Claude Code
+  derivatives: verified on this machine that `~/.qwen`, `~/.qoder`, `~/.trae`,
+  `~/.codebuddy`, `~/.factory` (Droid) and `~/.copilot` all register the *same* hook
+  vocabulary and the same `{"hooks": {Event: [{"hooks": [{"type":"command", …}]}]}}` shape our
+  `HookRouter` already decodes. So they became data, not code: `HookFamilyCLI` describes each
+  (route, config path, binaries, config style), `HookConfigBuilder` is the single merge/strip/
+  state implementation (Claude Code's `ClaudeHookCommand` now delegates to it), and
+  `HookFamilyAdapter` is one adapter for all of them. The hook server accepts `/hook/<source>`
+  and tags the session's agent from the route. Copilot reads a hooks *directory*, so we own
+  `tokenisland.json` there — nothing shared to merge. Safety cover: install only adds our
+  marker-tagged entries beside another monitor's, backs the file up first (once), uninstall
+  restores it to their entries alone, and a moved port reports repairable. Roster now Claude
+  Code, Qwen, Qoder, Trae, CodeBuddy, Droid, Copilot, Codex, Gemini — all six new ones detect
+  as "Needs setup" here, i.e. installed but not yet hooked. **179/179 tests green**.
+  Not done: Cursor speaks a different vocabulary (`beforeShellExecution`, `afterFileEdit`,
+  `subagentStart`) — a second family; Gemini-style (`BeforeTool`/`AfterTool`) is a third.
 - **2026-08-01 (idle sessions no longer read as "working")** — opening or resuming a CLI
   showed up as a blue, actively-working agent: `SessionReducer` set `phase = .working` on
   every `SessionStart`, and `synthesizeSession` defaulted the same way. With several
@@ -632,3 +648,28 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   pointed, or the domain silently serves someone else's app over TLS.
   Outstanding: no `www.tokenisland.uz` DNS record (Cloudflare flags it); add the record then
   re-run certbot with `-d tokenisland.uz -d www.tokenisland.uz` if www is wanted.
+- **2026-08-04 (SEO pass + ru/uz localisation)** — audited against the checklist the user
+  supplied. Was already fine: original content, one h1 with no skipped levels, clean URLs,
+  mobile-friendly (no overflow 375–1440), no keyword cannibalisation, no orphan pages.
+  **Biggest risk checked and cleared:** JS crawlability. Comparing raw HTML against the
+  `--dump-dom` render showed only 58 JS-only words, all demo-mockup strings; every heading
+  and all real copy is static.
+  Fixed: title 70 → 52 chars, description 191 → 157, plus canonical, og:url/image/site_name/
+  locale, Twitter summary_large_image, robots meta, and a 4-entry hreflang set. JSON-LD
+  `@graph` with SoftwareApplication + Person (E-A-T) + WebSite + FAQPage, the FAQ generated
+  from the real `<details>` so schema can't drift. Added robots.txt, sitemap.xml with
+  per-URL hreflang, and og.png rendered from the actual hero.
+  Localisation is **build-time, not JS** — `/`, `/ru/`, `/uz/` are separate crawlable URLs
+  with a real `<a href>` switcher. `build.py` masks script/style/pre/code and the
+  diff/hook/terminal blocks before substitution, so code is never translated; verified the
+  ru/uz builds have byte-identical `<script>` blocks and identical tag counts to the source.
+  Two bugs of mine caught by verification: keys are stored stripped while the document
+  indents its text nodes, so exact-match replacement silently left the lede and the CTA in
+  English (fixed with a whitespace-tolerant pattern); and `build.py`/`i18n.json` were
+  publicly fetchable — `Disallow` is advisory, so they are now `deny all` in nginx (403).
+  Cloudflare **prepends its own managed robots.txt** (AI content-signals) but keeps our
+  rules and the Sitemap line — checked, not a problem.
+  Live: / /ru/ /uz/ /robots.txt /sitemap.xml /og.png all 200; build inputs 403; and
+  sifatly/taomly/eiuedu/tesol/mardonjon.me all still 200.
+  Outstanding: no `www` DNS record; Cloudflare SSL mode should be Full (strict) now the
+  origin has a real cert; backlinks and keyword-volume research need tools I don't have.
