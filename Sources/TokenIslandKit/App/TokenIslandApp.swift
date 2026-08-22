@@ -22,29 +22,12 @@ public struct TokenIslandApp: App {
         AppDelegate.environment = environment
     }
 
+    /// Only the Settings scene lives here. The menu bar icon is an
+    /// `NSStatusItem` (`StatusItemController`) so a click can open the
+    /// dashboard directly instead of a popover, and the dashboard window is
+    /// opened by `AppWindowRouter` — a `WindowGroup` would also open itself at
+    /// launch, which an accessory app must not do.
     public var body: some Scene {
-        MenuBarExtra {
-            MenuBarPopoverView()
-                .environmentObject(appState)
-                .preferredColorScheme(.dark)
-        } label: {
-            Label {
-                Text(AppConstants.appName)
-            } icon: {
-                Image(nsImage: AppIconArt.menuBarIcon())
-            }
-        }
-        .menuBarExtraStyle(.window)
-
-        WindowGroup("TokenIsland Dashboard", id: "dashboard") {
-            DashboardView()
-                .environmentObject(appState)
-                .preferredColorScheme(.dark)
-                .frame(minWidth: 940, minHeight: 640)
-                .task { await appState.start() }
-        }
-        .defaultSize(width: 1080, height: 720)
-
         Settings {
             SettingsView()
                 .environmentObject(appState)
