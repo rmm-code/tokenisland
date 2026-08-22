@@ -12,13 +12,17 @@ import XCTest
 /// chain (park → verdict → serialize → respond) is covered without a UI.
 @MainActor
 final class ApprovalRoundTripTests: XCTestCase {
-    private nonisolated static let port: UInt16 = 49_741
+    /// Assigned by `startServer`. A hardcoded port made these fail whenever
+    /// anything else held it — including a second checkout of this repo
+    /// running its own suite, which is exactly what CI does.
+    private var port: UInt16 = 0
 
     private func makeServer(
+        port: UInt16,
         store: SessionStore,
         center: ApprovalCenter
     ) -> HookServer {
-        HookServer(port: Self.port) { event in
+        HookServer(port: port) { event in
             enum Route { case none, hold(String), autoAllow }
             let route = await MainActor.run { () -> Route in
                 store.apply(event)
@@ -43,6 +47,23 @@ final class ApprovalRoundTripTests: XCTestCase {
         }
     }
 
+    /// Starts the server on the first port that will actually bind.
+    private func startServer(store: SessionStore, center: ApprovalCenter) throws -> HookServer {
+        var lastError: Error?
+        for candidate in UInt16.random(in: 49_200...49_700)... {
+            let server = makeServer(port: candidate, store: store, center: center)
+            do {
+                try server.start()
+                port = candidate
+                return server
+            } catch {
+                lastError = error
+                if candidate > 49_900 { break }
+            }
+        }
+        throw lastError ?? URLError(.cannotConnectToHost)
+    }
+
     /// Built as `Data` and posted from a nonisolated helper: under Swift 6 a
     /// `[String: Any]` crossing into an `async let` is a data-race error.
     private nonisolated static func permissionBody(
@@ -64,8 +85,8 @@ final class ApprovalRoundTripTests: XCTestCase {
         return try! JSONSerialization.data(withJSONObject: body)
     }
 
-    private nonisolated static func post(_ body: Data) async throws -> String {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(Self.port)/hook/claude")!)
+    private nonisolated static func post(port: UInt16, _ body: Data) async throws -> String {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/hook/claude")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -92,12 +113,12 @@ final class ApprovalRoundTripTests: XCTestCase {
     func testAllowReachesTheCLIAsAPermissionDecision() async throws {
         let store = SessionStore()
         let center = ApprovalCenter()
-        let server = makeServer(store: store, center: center)
-        try server.start()
+        let server = try startServer(store: store, center: center)
         defer { server.stop() }
         try await Task.sleep(for: .milliseconds(150))
 
-        async let reply = Self.post(Self.permissionBody(toolUseID: "rt-allow"))
+        let boundPort = port
+        async let reply = Self.post(port: boundPort, Self.permissionBody(toolUseID: "rt-allow"))
         await answer(center) { $0.approve(id: $1) }
 
         let body = try await reply
@@ -110,12 +131,12 @@ final class ApprovalRoundTripTests: XCTestCase {
     func testDenyReachesTheCLI() async throws {
         let store = SessionStore()
         let center = ApprovalCenter()
-        let server = makeServer(store: store, center: center)
-        try server.start()
+        let server = try startServer(store: store, center: center)
         defer { server.stop() }
         try await Task.sleep(for: .milliseconds(150))
 
-        async let reply = Self.post(Self.permissionBody(toolUseID: "rt-deny"))
+        let boundPort = port
+        async let reply = Self.post(port: boundPort, Self.permissionBody(toolUseID: "rt-deny"))
         await answer(center) { $0.deny(id: $1) }
 
         let body = try await reply
@@ -126,18 +147,18 @@ final class ApprovalRoundTripTests: XCTestCase {
     func testAlwaysAllowAutoAnswersTheFollowingRequest() async throws {
         let store = SessionStore()
         let center = ApprovalCenter()
-        let server = makeServer(store: store, center: center)
-        try server.start()
+        let server = try startServer(store: store, center: center)
         defer { server.stop() }
         try await Task.sleep(for: .milliseconds(150))
 
-        async let first = Self.post(Self.permissionBody(toolUseID: "rt-always-1"))
+        let boundPort = port
+        async let first = Self.post(port: boundPort, Self.permissionBody(toolUseID: "rt-always-1"))
         await answer(center) { $0.alwaysAllow(id: $1) }
         let firstBody = try await first
         XCTAssertTrue(firstBody.contains("\"permissionDecision\":\"allow\""), "body was: \(firstBody)")
 
         // Second one must answer itself immediately — no verdict given here.
-        let second = try await Self.post(Self.permissionBody(toolUseID: "rt-always-2"))
+        let second = try await Self.post(port: port, Self.permissionBody(toolUseID: "rt-always-2"))
         XCTAssertTrue(second.contains("\"permissionDecision\":\"allow\""), "body was: \(second)")
         XCTAssertTrue(center.pending.isEmpty, "auto-allow must not leave a card behind")
     }
@@ -148,12 +169,11 @@ final class ApprovalRoundTripTests: XCTestCase {
         let store = SessionStore()
         let center = ApprovalCenter()
         center.holdTimeoutSeconds = 0.4
-        let server = makeServer(store: store, center: center)
-        try server.start()
+        let server = try startServer(store: store, center: center)
         defer { server.stop() }
         try await Task.sleep(for: .milliseconds(150))
 
-        let body = try await Self.post(Self.permissionBody(toolUseID: "rt-timeout"))
+        let body = try await Self.post(port: port, Self.permissionBody(toolUseID: "rt-timeout"))
         XCTAssertFalse(body.contains("permissionDecision"), "body was: \(body)")
         XCTAssertEqual(body, "{\"ok\":true}")
     }
@@ -164,14 +184,14 @@ final class ApprovalRoundTripTests: XCTestCase {
         let store = SessionStore()
         let center = ApprovalCenter()
         center.holdTimeoutSeconds = 20
-        let server = makeServer(store: store, center: center)
-        try server.start()
+        let server = try startServer(store: store, center: center)
         defer { server.stop() }
         try await Task.sleep(for: .milliseconds(150))
 
         // Approve the instant the card appears — as close to the register/wait
         // boundary as the harness can get.
-        async let reply = Self.post(Self.permissionBody(toolUseID: "rt-race"))
+        let boundPort = port
+        async let reply = Self.post(port: boundPort, Self.permissionBody(toolUseID: "rt-race"))
         await answer(center) { $0.approve(id: $1) }
 
         let started = Date()
