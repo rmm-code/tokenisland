@@ -190,15 +190,6 @@ final class SessionStore: ObservableObject {
         sessionMap[id]
     }
 
-    /// Marks a session as waiting on a notch approval (held PreToolUse).
-    func setApprovalPending(sessionID: String, message: String) {
-        guard var session = sessionMap[sessionID] else { return }
-        session.phase = .waitingApproval
-        session.pendingApprovalMessage = message
-        sessionMap[sessionID] = session
-        publish()
-        onReveal?(.attention, session)
-    }
 
     /// Clears the approval state once the verdict is in.
     func clearApprovalPending(sessionID: String) {
@@ -206,6 +197,7 @@ final class SessionStore: ObservableObject {
         session.phase = .working
         session.pendingApprovalMessage = nil
         session.pendingApprovalPreview = nil
+        session.pendingApprovalSource = nil
         sessionMap[sessionID] = session
         publish()
     }

@@ -90,4 +90,57 @@ final class ApprovalCenterTests: XCTestCase {
         XCTAssertNotNil(allow)
         XCTAssertTrue(allow?.contains("\"permissionDecision\":\"allow\"") == true || allow?.contains("\"permissionDecision\" : \"allow\"") == true)
     }
+
+    /// The card is clickable from the moment `register` publishes it, which is
+    /// before `wait` installs its continuation. A verdict pressed in that gap
+    /// used to be discarded, leaving the CLI parked to the full timeout — the
+    /// "I pressed Allow and nothing happened" report.
+    @MainActor
+    func testVerdictPressedBeforeWaitIsNotLost() async {
+        let center = ApprovalCenter()
+        let id = center.register(event: Self.permissionEvent(toolUseID: "race-1"))
+
+        // Verdict lands first, then the hook gets around to waiting.
+        center.approve(id: id)
+        let decision = await center.wait(id: id)
+
+        XCTAssertEqual(decision, .allow)
+        XCTAssertTrue(center.pending.isEmpty)
+    }
+
+    /// Re-registering the same tool_use_id used to overwrite the continuation
+    /// of the in-flight request, hanging that CLI call until its own timeout.
+    @MainActor
+    func testRepeatRegistrationReleasesThePreviousRequest() async {
+        let center = ApprovalCenter()
+        // Deliberately long: with the orphan bug the first caller is only
+        // released by its own timeout, so a generous timeout is what makes
+        // this test meaningful rather than accidentally passing.
+        center.holdTimeoutSeconds = 30
+        let id = center.register(event: Self.permissionEvent(toolUseID: "dup-1"))
+
+        let first = Task { await center.wait(id: id) }
+        await Task.yield()
+
+        // Same id arrives again; the first caller must be released, not orphaned.
+        let started = Date()
+        _ = center.register(event: Self.permissionEvent(toolUseID: "dup-1"))
+        let firstDecision = await first.value
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertEqual(firstDecision, .passthrough)
+        XCTAssertLessThan(elapsed, 2, "first request was orphaned until its timeout")
+    }
+
+    private static func permissionEvent(toolUseID: String) -> SessionEvent {
+        SessionEvent(
+            context: SessionEventContext(sessionID: "s1", agent: .claude),
+            kind: .permissionRequest(
+                toolName: "Edit",
+                detail: "src/x.ts",
+                toolUseID: toolUseID,
+                preview: nil
+            )
+        )
+    }
 }

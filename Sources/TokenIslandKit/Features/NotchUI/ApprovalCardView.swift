@@ -47,10 +47,17 @@ struct ApprovalCardView: View {
                         approvalCenter.alwaysAllow(id: approval.id)
                     }
                 } else {
-                    // Approval is happening in the terminal (native mode or a
-                    // Notification-driven prompt) — offer the jump instead.
+                    // No held request to answer: either native-approval mode,
+                    // or a Notification-driven prompt the CLI owns. Say which,
+                    // so "Answer in terminal" does not read as a failure of the
+                    // notch to offer the verdict buttons.
                     approvalButton(title: "Answer in terminal", hint: "⌃T", prominent: true) {
                         onJump(session)
+                    }
+                    if session.pendingApprovalSource == .terminalOnly {
+                        Text("asked in its terminal")
+                            .font(.system(size: 10))
+                            .foregroundStyle(TITheme.tertiaryText)
                     }
                 }
                 Spacer()

@@ -38,6 +38,11 @@ final class ApprovalCenter: ObservableObject {
 
     private var continuations: [String: CheckedContinuation<ApprovalDecision, Never>] = [:]
     private var timeoutTasks: [String: Task<Void, Never>] = [:]
+    /// Ids that have been registered but whose `wait` has not run yet.
+    private var awaitingRegistration: Set<String> = []
+    /// Verdicts that arrived before `wait` installed its continuation. Without
+    /// this the press is dropped and the CLI hangs to the timeout.
+    private var earlyDecisions: [String: ApprovalDecision] = [:]
     /// Tools the user already always-allowed, per session.
     private var sessionAllowlist: [String: Set<String>] = [:]
     /// Sessions the user bypassed entirely.
@@ -77,13 +82,27 @@ final class ApprovalCenter: ObservableObject {
             preview: preview,
             createdAt: event.context.timestamp
         )
+        // A repeat of the same tool_use_id replaces the visible card. If the
+        // previous one is still parked, resolve it first — otherwise `wait`
+        // overwrites its continuation and that CLI call hangs forever.
+        if continuations[id] != nil || earlyDecisions[id] != nil {
+            finish(id: id, decision: .passthrough)
+        }
         pending.removeAll { $0.id == id }
         pending.append(approval)
+        awaitingRegistration.insert(id)
         return id
     }
 
     /// Parks until the user decides or the timeout fails open.
     func wait(id: String) async -> ApprovalDecision {
+        // The card is clickable from the moment `register` publishes it, which
+        // is before this runs. A verdict pressed in that window is recorded
+        // rather than dropped.
+        if let early = earlyDecisions.removeValue(forKey: id) {
+            awaitingRegistration.remove(id)
+            return early
+        }
         let timeout = holdTimeoutSeconds
         return await withCheckedContinuation { continuation in
             continuations[id] = continuation
@@ -121,8 +140,13 @@ final class ApprovalCenter: ObservableObject {
         finish(id: id, decision: .allow)
     }
 
+    /// The approval a session should be answering right now.
+    ///
+    /// Oldest-first, deliberately: when a session has several requests parked
+    /// at once, the oldest is the one closest to failing open, so surfacing the
+    /// newest (LIFO) is what let the older one time out unanswered.
     func pendingApproval(forSessionID sessionID: String) -> PendingApproval? {
-        pending.last { $0.sessionID == sessionID }
+        pending.first { $0.sessionID == sessionID }
     }
 
     func dropPending(forSessionID sessionID: String) {
@@ -136,7 +160,14 @@ final class ApprovalCenter: ObservableObject {
     private func finish(id: String, decision: ApprovalDecision) {
         timeoutTasks.removeValue(forKey: id)?.cancel()
         pending.removeAll { $0.id == id }
-        continuations.removeValue(forKey: id)?.resume(returning: decision)
+        if let continuation = continuations.removeValue(forKey: id) {
+            awaitingRegistration.remove(id)
+            earlyDecisions.removeValue(forKey: id)
+            continuation.resume(returning: decision)
+        } else if awaitingRegistration.remove(id) != nil {
+            // Verdict beat `wait` to it — hold it so `wait` returns at once.
+            earlyDecisions[id] = decision
+        }
     }
 }
 

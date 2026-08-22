@@ -32,6 +32,7 @@ enum SessionReducer {
         case .userPrompt(let prompt):
             session.phase = .working
             session.pendingApprovalMessage = nil
+            session.pendingApprovalSource = nil
             session.pendingApprovalPreview = nil
             session.pendingQuestionMessage = nil
             session.questionOptions = []
@@ -52,6 +53,7 @@ enum SessionReducer {
         case .preTool(let toolName, let detail, let toolUseID, let subagentLabel):
             session.phase = .working
             session.pendingApprovalMessage = nil
+            session.pendingApprovalSource = nil
             session.pendingApprovalPreview = nil
             session.activity = SessionActivity(
                 toolName: toolName,
@@ -93,6 +95,7 @@ enum SessionReducer {
             let suffix = detail.map { ": \(condense($0, limit: 80))" } ?? ""
             session.pendingApprovalMessage = "Allow \(toolName)\(suffix)?"
             session.pendingApprovalPreview = preview
+            session.pendingApprovalSource = .notchVerdict
             effects.append(.revealAttention(sessionID: session.id))
 
         case .assistantMessage(let text):
@@ -147,6 +150,8 @@ enum SessionReducer {
                 session.phase = .waitingApproval
                 session.pendingApprovalMessage = message
                 session.pendingApprovalPreview = nil
+                // Not answerable here — the CLI is asking in its own terminal.
+                session.pendingApprovalSource = .terminalOnly
                 effects.append(.revealAttention(sessionID: session.id))
             case .idle:
                 if session.phase == .working {
@@ -164,6 +169,7 @@ enum SessionReducer {
             session.phase = .ready
             session.activity = nil
             session.pendingApprovalMessage = nil
+            session.pendingApprovalSource = nil
             session.pendingApprovalPreview = nil
             session.pendingQuestionMessage = nil
             session.questionOptions = []

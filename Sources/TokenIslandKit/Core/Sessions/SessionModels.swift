@@ -34,6 +34,15 @@ enum AgentKind: String, Codable, CaseIterable, Sendable {
 }
 
 /// Lifecycle phase of a session, drives pet color and card status line.
+/// Why a session is in `.waitingApproval`.
+enum PendingApprovalSource: String, Codable, Sendable {
+    /// A held `PermissionRequest` — the notch owns the verdict (⌃Y/⌃N/⌃A).
+    case notchVerdict
+    /// The CLI is prompting in its own terminal and is not waiting on us; the
+    /// only useful action from the notch is to jump there.
+    case terminalOnly
+}
+
 enum SessionPhase: String, Codable, Sendable {
     /// Open but doing nothing — the CLI is sitting at its prompt waiting for
     /// the user to type. Distinct from `.ready`, which means a turn just
@@ -145,6 +154,11 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     var pendingApprovalMessage: String?
     /// Structured command/diff preview for the pending approval card.
     var pendingApprovalPreview: ToolCallPreview?
+    /// Which kind of approval put this session in `.waitingApproval`. The phase
+    /// alone cannot say: a parked `PermissionRequest` is answerable from the
+    /// notch, a `Notification(permission_prompt)` only reports that the CLI is
+    /// prompting in its own terminal.
+    var pendingApprovalSource: PendingApprovalSource?
     var pendingQuestionMessage: String?
     /// Option labels for a pending `AskUserQuestion` (max 9, answer via ⌃1–9).
     var questionOptions: [String] = []
