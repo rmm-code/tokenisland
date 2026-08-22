@@ -224,11 +224,23 @@ final class TokenIslandWindowController {
         guard hoverSentinel == nil else { return }
         hoverSentinel = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(90))
+                // 90ms is what makes hover feel instant, but it is only worth
+                // paying while there is something on screen to hover. This app
+                // runs all day, so polling 11x/second with the overlay hidden
+                // is pure idle drain.
+                let idle = self?.isSentinelIdle ?? true
+                try? await Task.sleep(for: .milliseconds(idle ? 500 : 90))
                 guard let self else { return }
                 self.pollPointer()
             }
         }
+    }
+
+    /// Mirrors `pollPointer`'s guard: nothing to hover, nothing to poll for.
+    private var isSentinelIdle: Bool {
+        !appState.settings.showNotchOverlay
+            || window?.isVisible != true
+            || currentLayout == nil
     }
 
     private func pollPointer() {
@@ -334,6 +346,9 @@ final class TokenIslandWindowController {
             return
         }
         window?.orderFrontRegardless()
+        // The sentinel may be mid-idle-sleep; sync hover now so the first
+        // hover after the island appears is never up to 500ms late.
+        pollPointer()
     }
 
     /// An empty collapsed strip is invisible on a notched Mac — it *is* the

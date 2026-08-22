@@ -8,11 +8,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchWindowController: TokenIslandWindowController?
     private var onboardingWindowController: OnboardingWindowController?
     private var updateCheckTask: Task<Void, Never>?
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installExceptionLogger()
         NSApp.setActivationPolicy(.accessory)
         guard let environment = Self.environment else { return }
+
+        statusItemController = StatusItemController(
+            appState: environment.appState,
+            windowRouter: environment.windowRouter,
+            updateChecker: environment.updateChecker
+        )
 
         notchWindowController = TokenIslandWindowController(
             appState: environment.appState,
@@ -64,10 +71,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stack:
             \(exception.callStackSymbols.joined(separator: "\n"))
             """
-            let url = FileManager.default
+            // No force-unwrap here of all places: this runs while the app is
+            // already crashing, and a trap would destroy the very log it is
+            // trying to write.
+            let base = FileManager.default
                 .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-                .first!
-                .appendingPathComponent("TokenIsland/last-exception.log")
+                .first
+                ?? URL(fileURLWithPath: NSHomeDirectory())
+                    .appendingPathComponent("Library/Application Support")
+            let url = base.appendingPathComponent("TokenIsland/last-exception.log")
             try? FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true

@@ -113,6 +113,51 @@ enum HookConfigBuilder {
     }
 
     /// Verifies an installed config covers all events on `port`.
+    /// Approval-answering hooks in this config that are not ours.
+    ///
+    /// Only one app may answer a `PermissionRequest`: whoever replies first
+    /// decides, and a second monitor either races us or (if it exits without
+    /// output) makes the event look unanswered. Silent, and it presents as
+    /// "I pressed Allow and nothing happened", so it is worth surfacing rather
+    /// than leaving people to find it in a config file.
+    ///
+    /// Returns a short identifier per foreign hook — the command's first path-
+    /// looking token, or a trimmed prefix — never the whole command line.
+    static func foreignApprovalHooks(settings: [String: Any]) -> [String] {
+        guard let hooks = settings["hooks"] as? [String: Any],
+              let groups = hooks["PermissionRequest"] as? [[String: Any]]
+        else { return [] }
+
+        return groups
+            .filter { !ownsGroup($0) }
+            .flatMap { ($0["hooks"] as? [[String: Any]]) ?? [] }
+            .compactMap { $0["command"] as? String }
+            .map(summarize(command:))
+    }
+
+    /// Shell wrappers a hook is usually invoked through. Naming these instead
+    /// of the tool they launch ("sh" rather than "vibe-island-bridge") tells
+    /// the user nothing about which app to go turn off.
+    private static let wrapperBinaries: Set<String> = [
+        "sh", "bash", "zsh", "env", "sudo", "nohup", "exec", "node", "python",
+        "python3", "npx", "caffeinate"
+    ]
+
+    /// Best-effort short name for a foreign hook command.
+    private static func summarize(command: String) -> String {
+        let names = command
+            .split(whereSeparator: { " \t\n\"'".contains($0) })
+            .map(String.init)
+            .filter { $0.contains("/") }
+            .map { ($0 as NSString).lastPathComponent }
+            .filter { !$0.isEmpty }
+
+        if let meaningful = names.first(where: { !wrapperBinaries.contains($0) }) {
+            return meaningful
+        }
+        return names.first ?? String(command.prefix(40))
+    }
+
     static func installState(
         settings: [String: Any],
         source: String,

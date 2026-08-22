@@ -116,4 +116,12 @@ struct HookFamilyAdapter: CLIAdapter {
         }
         return false
     }
+
+    func conflictingApprovalHooks() -> [String] {
+        guard let data = try? Data(contentsOf: settingsURL),
+              let settings = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return [] }
+        return HookConfigBuilder.foreignApprovalHooks(settings: settings)
+    }
+
 }

@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct IntegrationsSettingsPane: View, SettingsPaneBindingProviding {
+    private static let accessibilityPaneURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    )!
+
     @EnvironmentObject private var appState: AppState
     @State private var accessibilityGranted = false
 
@@ -44,15 +48,25 @@ struct IntegrationsSettingsPane: View, SettingsPaneBindingProviding {
             SettingsCard(title: "Permissions") {
                 SettingsRow(
                     title: "Accessibility",
-                    detail: "Required to land on the exact terminal window when jumping."
+                    detail: accessibilityGranted
+                        ? "Required to land on the exact terminal window when jumping."
+                        // The confusing case: the switch is on, but macOS still
+                        // says no because the entry belongs to an older build of
+                        // the app. Nothing in the UI hints at that, so say it.
+                        : "Not granted. If TokenIsland is already listed and switched on, select it, press −, then add it again — a leftover entry from an earlier build does not match this one."
                 ) {
                     if accessibilityGranted {
                         Label("Granted", systemImage: "checkmark.seal.fill")
                             .font(.callout)
                             .foregroundStyle(PetPalette.tint(for: .ready))
                     } else {
-                        Button("Grant…") {
-                            WindowLocator.requestAccessibilityPermission()
+                        HStack(spacing: 8) {
+                            Button("Grant…") {
+                                WindowLocator.requestAccessibilityPermission()
+                            }
+                            Button("Open Settings") {
+                                NSWorkspace.shared.open(Self.accessibilityPaneURL)
+                            }
                         }
                     }
                 }
@@ -70,22 +84,49 @@ struct IntegrationsSettingsPane: View, SettingsPaneBindingProviding {
             appState.adapterRegistry.refreshStatuses()
             accessibilityGranted = WindowLocator.hasAccessibilityPermission
         }
+        // Granting happens in System Settings, in another window: without a
+        // poll this row keeps claiming "not granted" until the pane is reopened.
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            let granted = WindowLocator.hasAccessibilityPermission
+            if granted != accessibilityGranted { accessibilityGranted = granted }
+        }
     }
 
     @ViewBuilder
     private func adapterRow(_ entry: AdapterRegistry.Entry) -> some View {
-        HStack(spacing: 10) {
-            Text(entry.adapter.displayName)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(TITheme.primaryText)
-            Spacer()
-            if entry.adapter.integrationMode == .passiveWatcher {
-                passiveWatcherControl(entry)
-            } else {
-                managedHookControl(entry)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Text(entry.adapter.displayName)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(TITheme.primaryText)
+                Spacer()
+                if entry.adapter.integrationMode == .passiveWatcher {
+                    passiveWatcherControl(entry)
+                } else {
+                    managedHookControl(entry)
+                }
             }
+            conflictWarning(entry)
         }
         .padding(.vertical, 4)
+    }
+
+    /// Another app answering the same approvals is invisible from the notch —
+    /// it just looks like a verdict did nothing — so name it here.
+    @ViewBuilder
+    private func conflictWarning(_ entry: AdapterRegistry.Entry) -> some View {
+        let conflicts = entry.adapter.conflictingApprovalHooks()
+        if !conflicts.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TITheme.warning)
+                Text("Also answering approvals: \(conflicts.joined(separator: ", ")). Only one app should — verdicts may not take effect.")
+                    .font(.caption)
+                    .foregroundStyle(TITheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     @ViewBuilder

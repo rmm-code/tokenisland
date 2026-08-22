@@ -18,10 +18,12 @@ enum JumpRules {
     nonisolated(unsafe) private static var cache: Cache?
 
     static var fileURL: URL {
-        FileManager.default
+        let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first!
-            .appendingPathComponent("TokenIsland/jump-rules.json")
+            .first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("TokenIsland/jump-rules.json")
     }
 
     /// URL template for a terminal, or nil when no rule exists.

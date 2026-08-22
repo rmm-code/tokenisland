@@ -138,4 +138,40 @@ final class HookFamilyAdapterTests: XCTestCase {
         let adapter = HookFamilyAdapter(cli: qwen, homeDirectory: home)
         XCTAssertEqual(adapter.status(hookPort: 47791), .notFound, "no config dir, no binary")
     }
+    /// Two apps answering the same PermissionRequest is silent from the notch —
+    /// it presents as "I pressed Allow and nothing happened" — so it has to be
+    /// detected rather than left in a config file for someone to find.
+    func testForeignApprovalHooksAreDetectedAndOursAreNot() {
+        let settings: [String: Any] = [
+            "hooks": [
+                "PermissionRequest": [
+                    ["matcher": "*", "hooks": [[
+                        "type": "command",
+                        "command": "/bin/sh -c '$HOME/.vibe-island/bin/vibe-island-bridge --source claude'"
+                    ]]],
+                    ["matcher": "*", "hooks": [[
+                        "type": "command",
+                        "command": "curl -s http://127.0.0.1:47791/hook/claude \(HookConfigBuilder.ownershipMarker)"
+                    ]]]
+                ]
+            ]
+        ]
+        let found = HookConfigBuilder.foreignApprovalHooks(settings: settings)
+        XCTAssertEqual(found, ["vibe-island-bridge"], "ours must never be reported as a conflict")
+    }
+
+    func testNoConflictWhenOnlyOurHookIsInstalled() {
+        let settings: [String: Any] = [
+            "hooks": [
+                "PermissionRequest": [
+                    ["matcher": "*", "hooks": [[
+                        "type": "command",
+                        "command": "curl -s http://127.0.0.1:47791/hook/claude \(HookConfigBuilder.ownershipMarker)"
+                    ]]]
+                ]
+            ]
+        ]
+        XCTAssertTrue(HookConfigBuilder.foreignApprovalHooks(settings: settings).isEmpty)
+    }
+
 }

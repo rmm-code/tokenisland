@@ -87,6 +87,13 @@ struct ClaudeCodeAdapter: CLIAdapter {
         ]
         return searchPaths.contains { fileManager.isExecutableFile(atPath: $0) }
     }
+
+    func conflictingApprovalHooks() -> [String] {
+        guard let data = try? Data(contentsOf: settingsURL),
+              let settings = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return [] }
+        return HookConfigBuilder.foreignApprovalHooks(settings: settings)
+    }
 }
 
 enum AdapterFileError: Error, LocalizedError {
@@ -98,4 +105,5 @@ enum AdapterFileError: Error, LocalizedError {
             "\(file) is not a JSON object — refusing to modify it."
         }
     }
+
 }

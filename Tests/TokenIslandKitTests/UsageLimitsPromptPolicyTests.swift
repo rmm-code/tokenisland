@@ -80,6 +80,16 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
     func testCamelCaseWindowKeysAreTreatedAsTheSameWindow() {
         XCTAssertEqual(UsageLimitsService.normalizedKey("fiveHour"), "five_hour")
         XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "sevenDayFable"), "7d Fable")
+        // The endpoint ships the Fable cap under an internal codename; without
+        // the mapping this renders as "Nimbus Quill" in the pill.
+        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "nimbus_quill"), "Fable 5")
+        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "nimbusQuill"), "Fable 5")
+        XCTAssertEqual(
+            UsageLimitsService.windowLabel(forKey: "seven_day_nimbus_quill"),
+            "7d Fable 5"
+        )
+        // Unmapped keys must still degrade to something readable.
+        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "seven_day_widget"), "7d Widget")
     }
 
     func testTimestampParsingAcceptsTheShapesTheEndpointCanSend() throws {

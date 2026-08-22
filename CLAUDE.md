@@ -14,7 +14,7 @@ into this agent monitor. The reference app being recreated is **Vibe Island**
 
 ```bash
 swift build                     # build (Swift 6, strict concurrency)
-swift test                      # full suite — MUST stay green (207 tests)
+swift test                      # full suite — MUST stay green (217 tests)
 bash Scripts/build_app_bundle.sh    # signed .app → .build/TokenIsland.app
 bash Scripts/run.sh             # build + relaunch  ← run the app THIS way
 bash Scripts/release.sh 0.2.1   # sign → notarize → staple → dmg + zip + appcast
@@ -74,7 +74,12 @@ Event flow: CLI hooks → `HookServer` (`127.0.0.1:47791/hook/<source>`) → dia
 watcher feeds the same store.
 
 - `Core/Sessions/` — `AgentSession` model, `SessionEvent`, reducer, `SessionStore`
-  (single source of session truth; reveal/sound/removal callbacks).
+  (single source of session truth; reveal/sound/removal callbacks). Phases are
+  `idle · working · waitingApproval · question · ready · error · ended`; `idle`
+  means "open, sitting at its prompt" and is NOT active, `ready` means "a turn
+  just finished and there is a result worth reading" — the desktop app never
+  sends `SessionEnd`, so its tabs sit in `idle` until the 2h stale sweep, which
+  is why the panel legitimately lists sessions that are not running.
 - `Core/Hooks/` — localhost receiver + **three payload dialects**: `HookRouter` (Claude
   Code and its derivatives), `CursorHookRouter` (`preToolUse`, `beforeShellExecution`,
   `conversation_id`, `workspace_roots`), `GeminiHookRouter` (`BeforeTool`/`AfterAgent`,
@@ -105,13 +110,23 @@ watcher feeds the same store.
   iTerm2 via AppleScript; WezTerm via CLI; kitty via remote control) → AX title-marker
   scan (`TitleMarkerService` stamps "claude — <slug>" via hook `terminalSequence`) →
   app activation. `KeyInjection` types question answers (⌃1–9).
-- `Core/Approvals/` — parked-approval registry; ⌃Y/⌃N/⌃A/⌃B.
+- `Core/Approvals/` — parked-approval registry; ⌃Y/⌃N/⌃A/⌃B. **The card is
+  clickable from the moment `register` publishes it, which is before `wait`
+  installs its continuation** — a verdict landing in that gap is parked in
+  `earlyDecisions` and returned by the next `wait`, never dropped. Re-registering
+  a live `tool_use_id` resolves the previous request `.passthrough` first; simply
+  overwriting the continuation orphans that CLI call until its own timeout. Both
+  paths produce the same user-visible symptom ("I pressed Allow and nothing
+  happened") and both are covered by `ApprovalCenterTests`.
 - `Core/Pets/` — pixel sprites (4 species, 2-frame walk), Canvas renderer, state tints.
 - `Core/Windowing/` — the notch overlay: full-width transparent strip window
   (`statusBar+8`), hardware-notch geometry (+ symmetric wings so expansion is centered),
   state machine (collapsed/hover→expanded/reveal), **mouse-poll hover sentinel** (11 Hz —
   AppKit hover events are unreliable for non-key overlay windows), ⌃G switcher HUD.
-- `Core/UsageLimits/` — Claude OAuth usage endpoint (read-only) + Codex `rate_limits`
+- `Core/UsageLimits/` — per-model caps sometimes arrive under an internal
+  codename (`nimbus_quill` is the Fable cap); `windowCodenames` maps them, and
+  without it the pill shows "Nimbus Quill". Add a row when a new key appears in
+  the "usage endpoint reported keys" log line. Claude OAuth usage endpoint (read-only) + Codex `rate_limits`
   from session JSONL; rendered as the panel-header pill. Windows are **discovered**, not
   hardcoded, so per-model caps appear automatically (`5h 33% | 7d 55% | 7d Fable 12%`);
   `*_opus` is suppressed because Claude does not meter it. The access token is cached for
@@ -119,6 +134,11 @@ watcher feeds the same store.
 - `Core/Audio/` — synthesized 8-bit cues (3 packs), no audio assets.
 - `Features/NotchUI/` — strip, session cards, completion (LiteMarkdown), approval
   (diff preview), question cards, reveal, switcher HUD.
+- `App/StatusItemController` — the menu bar icon is a plain `NSStatusItem`: primary click
+  opens **Settings** (the sidebar window — the app's real surface), secondary click gets a
+  small menu (settings, hide island, updates, the legacy usage dashboard, quit). It replaced a `MenuBarExtra` popover that led with the legacy token
+  counter. The app has **only a `Settings` scene** — a `WindowGroup` would open itself at
+  launch, which an accessory app must not do; `AppWindowRouter` owns the dashboard window.
 - `Features/Settings/` — sidebar window (General/Integrations/Notifications/Display/
   Sound/Usage/Shortcuts/Labs/Pass/About). Panes bind via
   `SettingsPaneBindingProviding` keypath helpers into `AppState.settings`.
@@ -131,12 +151,17 @@ watcher feeds the same store.
 
 - `Docs/PLAN.md` — execution plan + status log (keep updating it).
 - `Docs/PROMO_VIDEO.md` — promo-video runbook (scene scripts, beats, exports).
+- **Architecture diagram** — the signal path (producers → transport → decode →
+  core → surface), the approval return path, phases, subsystems and the
+  invariants the tests defend, as a published artifact:
+  https://claude.ai/code/artifact/a0a74e68-f088-4ed4-80e2-116710a49b03
+  Republish from the same file path to update it in place.
 - `Docs/VIBE_ISLAND_BLUEPRINT.md` — the reference app's full UI/mechanism spec.
 - `island/` — reference screenshots + screen recording (source of design truth).
 
 ## Status & gotchas (2026-08-04)
 
-- Phases P0–P12 + parity rounds done; **207/207 tests green**. Distribution is live:
+- Phases P0–P12 + parity rounds done; **217/217 tests green**. Distribution is live:
   Developer ID + notarized + stapled, Sparkle in-place updates, DMG + zip published to
   GitHub Releases on a public repo, feed verified against the real published appcast.
 - **10 CLI integrations** (was 3): the Claude-family ones are descriptors, not adapters.
@@ -191,12 +216,74 @@ watcher feeds the same store.
   `~/Library/Application Support/TokenIsland/last-exception.log` — read it first when
   debugging any crash.
 - Hooks apply to NEW Claude sessions only (snapshot at session start).
+- Vibe Island's hook is installed **ahead of ours** on every `PermissionRequest`
+  in `~/.claude/settings.json`. Measured 2026-08-22: its bridge emits **0 bytes**
+  (the launcher script has a zsh syntax error, `unmatched "` at line 48), so it
+  does NOT steal the verdict — rule it out before blaming it for approval bugs.
+  Nothing in the app detects a competing hook; that is still a real product gap.
 - The real Vibe Island's hooks may still be installed on this machine
   (`~/.vibe-island`, entries in `~/.claude/settings.json`, `~/.gemini/settings.json`) —
   both apps can watch sessions, but only ONE should answer approvals.
 - Gemini adapter is fixture-tested but unvalidated against real local data (this
   machine has no Gemini CLI session history); the real Vibe Island integrates Gemini
   via hooks in `~/.gemini/settings.json` — a hook-based upgrade is the natural next step.
+- **Audit 2026-08-22** (`swift build` clean, 0 warnings; 125 files, ~15.5k lines,
+  none over 700). Everything the audit found is fixed:
+  1. **`ApprovalCenter` lost-verdict race** — a press landing between `register`
+     and `wait` was discarded; now parked in `earlyDecisions`.
+  2. **Duplicate `tool_use_id`** orphaned the in-flight request; the previous one
+     is now resolved `.passthrough` first.
+  3. **`pendingApproval(forSessionID:)` was LIFO** — with several requests parked
+     it surfaced the newest and let the oldest (nearest its timeout) expire
+     unanswered. Now oldest-first.
+  4. **`pendingApprovalSource`** (`.notchVerdict` / `.terminalOnly`) records WHY a
+     session is `.waitingApproval`, which the phase alone could not express.
+  5. **Force-unwraps removed** from the uncaught-exception handler and
+     `JumpRules` — the former sat in the one place a trap destroys the crash log.
+  6. **Competing approval hooks are detected** —
+     `HookConfigBuilder.foreignApprovalHooks` finds `PermissionRequest` hooks
+     that are not marker-tagged, and Integrations shows "Also answering
+     approvals: …". Wrapper binaries (`sh`, `env`, `node`…) are skipped so the
+     warning names the actual app, not the shell that launched it.
+  - Dead code removed: `SessionStore.setApprovalPending` had no callers.
+  - **Measured on this machine:** THREE apps hook `PermissionRequest` — ours,
+    `vibe-island-bridge`, and Orca's `~/.orca/agent-hooks/claude-hook.sh`. Both
+    foreign hooks emit **0 bytes**, so neither steals the verdict; Vibe Island's
+    launcher is in fact broken (`unmatched "` at line 48). Rule them out before
+    blaming a conflict for an approval bug.
+  - **REPRODUCED.** "Pressed Allow, nothing happened" is the lost-verdict race
+    (1). Proof: revert `finish()` to the pre-fix version and
+    `testVerdictPressedBeforeWaitIsNotLost` fails after **55.2s** — exactly
+    `holdTimeoutSeconds`, i.e. the verdict is discarded and only the fail-open
+    timeout releases the CLI, which then prompts in its own terminal. With the
+    fix it returns in 0.001s. Manual reproduction never worked because a human
+    cannot reliably press inside the register→wait window; the test can.
+  - `ApprovalRoundTripTests` now covers the whole chain over real HTTP — park →
+    verdict → serialize → response body — for allow, deny, Always-Allow
+    (auto-answering the NEXT request with no card), and timeout fail-open. If
+    approvals ever regress, that file says which link broke.
+- **Audit round 2, 2026-08-22** — went after everything round 1 skipped:
+  networking, the Codex/Gemini watchers, windowing, updates, persistence.
+  Most of it came back clean, and the negative results are worth keeping so
+  nobody re-investigates them:
+  - `LocalHTTPServer` is loopback-only (`requiredInterfaceType = .loopback`),
+    caps bodies at 4MB, accumulates by `Content-Length`, and **does** guard the
+    request line (`parts.count >= 2`) — a malformed request cannot trap it.
+  - **Both watchers handle truncation.** Codex resets its byte offset when
+    `size < offset`; Gemini clamps `consumedMessages` when the chat file
+    shrinks. A rewritten history file does not wedge either of them.
+  - No TODO/FIXME, no empty `catch`, no `try!`/`as!`, no `.first!` left, and no
+    unguarded array indexing. Every polling task is cancellable.
+  - **Fixed: the hover sentinel never slept.** It was created once, never
+    cancelled, and woke every 90ms for the life of the app — including with the
+    overlay switched off and zero sessions. Now it backs off to 500ms whenever
+    `isSentinelIdle` (overlay hidden / no window / no layout), and
+    `updateWindowVisibility` calls `pollPointer()` on show so the first hover is
+    never late. ~11 wakeups/sec → ~2 while idle, with no change to hover feel.
+  - Known and accepted: the hook server has **no authentication**. Any local
+    process can POST an event and fabricate a session card. Localhost-only and
+    fail-open by design, but worth knowing before treating card contents as
+    trustworthy.
 - Still open: watch a 0.2.0 install update itself (last unproven link in the Sparkle
   chain); the terminal-jump matrix (4 precise drivers vs the reference's 20+, no tmux, no
   IDE extensions); SSH Remote; licensing; localization; per-provider usage charts.

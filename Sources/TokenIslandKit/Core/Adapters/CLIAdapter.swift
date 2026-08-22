@@ -65,6 +65,14 @@ protocol CLIAdapter: Sendable {
     func installHooks(hookPort: UInt16) throws
     /// Remove only our hook entries, leaving user configuration untouched.
     func uninstallHooks() throws
+    /// Other apps' approval-answering hooks found in the same config. Only one
+    /// app may answer a `PermissionRequest`, so this is worth showing.
+    func conflictingApprovalHooks() -> [String]
+}
+
+extension CLIAdapter {
+    /// Most adapters do not share a config file with anyone.
+    func conflictingApprovalHooks() -> [String] { [] }
 }
 
 extension CLIAdapter {

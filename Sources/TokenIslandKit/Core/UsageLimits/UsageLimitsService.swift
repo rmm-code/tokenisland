@@ -147,8 +147,17 @@ final class UsageLimitsService: ObservableObject {
         return result
     }
 
-    /// "seven_day_fable" → "7d Fable". Unknown windows still get a readable
-    /// label rather than being dropped.
+    /// Per-model caps sometimes arrive under an internal codename rather than
+    /// the model's public name — the endpoint ships `nimbus_quill` for the
+    /// Fable cap, and title-casing it verbatim puts "Nimbus Quill" in the pill.
+    /// Add a row here when a new codename shows up in the "usage endpoint
+    /// reported keys" log line above.
+    nonisolated static let windowCodenames: [String: String] = [
+        "nimbus_quill": "Fable 5"
+    ]
+
+    /// "seven_day_fable" → "7d Fable", "nimbus_quill" → "Fable 5". Unknown
+    /// windows still get a readable label rather than being dropped.
     nonisolated static func windowLabel(forKey key: String) -> String {
         let normalized = normalizedKey(key)
         var remainder = normalized
@@ -158,11 +167,18 @@ final class UsageLimitsService: ObservableObject {
             prefix = short
             remainder = String(normalized.dropFirst(candidate.count))
         }
-        let suffix = remainder
-            .split(separator: "_")
-            .filter { !$0.isEmpty }
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
+
+        let trimmed = remainder.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        let suffix: String
+        if let known = windowCodenames[trimmed] {
+            suffix = known
+        } else {
+            suffix = trimmed
+                .split(separator: "_")
+                .filter { !$0.isEmpty }
+                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .joined(separator: " ")
+        }
         return [prefix, suffix.isEmpty ? nil : suffix]
             .compactMap { $0 }
             .joined(separator: " ")
