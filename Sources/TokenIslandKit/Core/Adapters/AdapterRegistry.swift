@@ -14,12 +14,22 @@ final class AdapterRegistry: ObservableObject {
 
     @Published private(set) var entries: [Entry] = []
     @Published private(set) var lastError: String?
+    @Published private(set) var disabledAdapterIDs: Set<String>
+    var onIntegrationsChanged: (() -> Void)?
 
     private let hookPort: UInt16
+    private let defaults: UserDefaults
+    private static let disabledAdaptersKey = "TokenIsland.DisabledHookAdapters.v1"
 
-    init(hookPort: UInt16 = AppConstants.defaultHookPort) {
+    init(
+        hookPort: UInt16 = AppConstants.defaultHookPort,
+        adapters: [any CLIAdapter]? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         self.hookPort = hookPort
-        self.entries = Self.roster().map { Entry(adapter: $0, status: .notFound) }
+        self.defaults = defaults
+        self.disabledAdapterIDs = Set(defaults.stringArray(forKey: Self.disabledAdaptersKey) ?? [])
+        self.entries = (adapters ?? Self.roster()).map { Entry(adapter: $0, status: .notFound) }
     }
 
     private static func roster() -> [any CLIAdapter] {
@@ -45,6 +55,23 @@ final class AdapterRegistry: ObservableObject {
         for index in entries.indices {
             entries[index].status = entries[index].adapter.status(hookPort: hookPort)
         }
+        onIntegrationsChanged?()
+    }
+
+    func isEnabled(adapterID: String) -> Bool { !disabledAdapterIDs.contains(adapterID) }
+
+    func isEnabled(agent: AgentKind) -> Bool {
+        entries.first(where: { $0.adapter.agentKind == agent }).map { isEnabled(adapterID: $0.id) } ?? true
+    }
+
+    func hasActiveHooks(for agent: AgentKind) -> Bool {
+        isEnabled(agent: agent) && entries.contains {
+            $0.adapter.agentKind == agent && $0.adapter.integrationMode == .managedHooks && $0.status.isActive
+        }
+    }
+
+    func setEnabled(_ enabled: Bool, adapterID: String) {
+        if enabled { install(adapterID: adapterID) } else { uninstall(adapterID: adapterID) }
     }
 
     /// Installs or repairs hooks where supported. Safe to call on every
@@ -52,6 +79,9 @@ final class AdapterRegistry: ObservableObject {
     func autoConfigure() {
         refreshStatuses()
         for index in entries.indices {
+            guard isEnabled(adapterID: entries[index].id),
+                  entries[index].adapter.integrationMode == .managedHooks
+            else { continue }
             switch entries[index].status {
             case .needsSetup, .needsRepair:
                 install(at: index)
@@ -70,7 +100,11 @@ final class AdapterRegistry: ObservableObject {
         guard let index = entries.firstIndex(where: { $0.id == adapterID }) else { return }
         do {
             try entries[index].adapter.uninstallHooks()
+            disabledAdapterIDs.insert(adapterID)
+            savePreferences()
             entries[index].status = entries[index].adapter.status(hookPort: hookPort)
+            lastError = nil
+            onIntegrationsChanged?()
         } catch {
             lastError = "\(entries[index].adapter.displayName): \(error.localizedDescription)"
         }
@@ -80,12 +114,20 @@ final class AdapterRegistry: ObservableObject {
         let adapter = entries[index].adapter
         do {
             try adapter.installHooks(hookPort: hookPort)
+            disabledAdapterIDs.remove(adapter.id)
+            savePreferences()
             entries[index].status = adapter.status(hookPort: hookPort)
+            lastError = nil
+            onIntegrationsChanged?()
         } catch {
             let message = error.localizedDescription
             entries[index].status = .failed(message)
             lastError = "\(adapter.displayName): \(message)"
             AppLog.telemetry.error("Hook install failed for \(adapter.id): \(message)")
         }
+    }
+
+    private func savePreferences() {
+        defaults.set(disabledAdapterIDs.sorted(), forKey: Self.disabledAdaptersKey)
     }
 }

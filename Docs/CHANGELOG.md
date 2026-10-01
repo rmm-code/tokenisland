@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.2 — 2026-10-01
+
+- Fixed Claude approval replies so Allow and Deny follow the PermissionRequest contract.
+- Added correct Cursor and Gemini hook configurations. Their ordinary tool calls
+  update activity without adding approval waits; permissions stay in the native CLI.
+- Protected malformed configuration files and other applications' hook commands
+  during installation, repair, migration, and removal.
+- Added persistent integration enable/disable switches and complete error messages.
+- Fixed native approval mode, timeout status, and concurrent approval previews.
+- Prevented duplicate Gemini cards when switching monitoring sources.
+- Included the menu-bar Settings entry point and earlier approval reliability fixes
+  already committed on the approval-fixes-and-audit branch.
+- Added regression and HTTP contract coverage; split reducer and router tests into
+  separate files. Updated integration setup documentation.
+
+Restart running CLI sessions after updating to load repaired hooks. Cursor and
+Gemini integrations are contract-tested; live sessions and VoiceOver remain unverified.
+
 ## 2026-07-16 — Vibe Island pivot
 
 The app is now an **agent session monitor** (Vibe Island-style): live AI CLI

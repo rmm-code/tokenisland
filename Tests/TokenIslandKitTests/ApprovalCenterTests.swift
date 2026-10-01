@@ -88,7 +88,7 @@ final class ApprovalCenterTests: XCTestCase {
         XCTAssertNil(HookResponses.permission(.passthrough, reason: "x"))
         let allow = HookResponses.permission(.allow, reason: "notch")
         XCTAssertNotNil(allow)
-        XCTAssertTrue(allow?.contains("\"permissionDecision\":\"allow\"") == true || allow?.contains("\"permissionDecision\" : \"allow\"") == true)
+        XCTAssertTrue(allow?.contains("\"behavior\":\"allow\"") == true || allow?.contains("\"behavior\" : \"allow\"") == true)
     }
 
     /// The card is clickable from the moment `register` publishes it, which is

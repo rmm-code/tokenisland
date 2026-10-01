@@ -86,47 +86,24 @@ final class AppEnvironment {
         // are watched the same way.
         let geminiSessionWatcher = GeminiSessionWatcher { event in
             Task { @MainActor in
+                guard adapterRegistry.isEnabled(agent: .gemini),
+                      !adapterRegistry.hasActiveHooks(for: .gemini)
+                else { return }
                 sessionStore.apply(event)
             }
         }
 
+        let hookHandler = HookEventHandler(
+            sessionStore: sessionStore,
+            approvalCenter: approvalCenter,
+            titleMarkers: titleMarkerService,
+            isEnabled: { agent in
+                adapterRegistry.isEnabled(agent: agent)
+                    && (agent != .gemini || adapterRegistry.hasActiveHooks(for: .gemini))
+            }
+        )
         let hookServer = HookServer { event in
-            // Apply the event; PermissionRequest may be parked for a verdict
-            // or auto-answered from an earlier Always-Allow/Bypass.
-            enum ApprovalRoute { case none, hold(String), autoAllow }
-            let route = await MainActor.run { () -> ApprovalRoute in
-                sessionStore.apply(event)
-                guard case .permissionRequest = event.kind else { return .none }
-                if approvalCenter.shouldAutoAllow(event: event) {
-                    sessionStore.clearApprovalPending(sessionID: event.context.sessionID)
-                    return .autoAllow
-                }
-                guard approvalCenter.shouldHold(event: event) else { return .none }
-                return .hold(approvalCenter.register(event: event))
-            }
-
-            switch route {
-            case .autoAllow:
-                return HookResponses.permission(.allow, reason: "Always allowed from the notch", agent: event.context.agent)
-            case .hold(let holdID):
-                let decision = await approvalCenter.wait(id: holdID)
-                await MainActor.run {
-                    sessionStore.clearApprovalPending(sessionID: event.context.sessionID)
-                }
-                return HookResponses.permission(decision, reason: "Decided from the notch", agent: event.context.agent)
-            case .none:
-                break
-            }
-
-            return await MainActor.run { () -> String? in
-                guard let session = sessionStore.session(withID: event.context.sessionID) else {
-                    return nil
-                }
-                guard let payload = titleMarkerService.responsePayload(for: event, session: session) else {
-                    return nil
-                }
-                return HookResponses.serialize(payload)
-            }
+            await hookHandler.handle(event)
         }
 
         sessionStore.onSessionRemoved = { sessionID in

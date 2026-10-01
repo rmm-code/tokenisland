@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum ApprovalDecision: String, Sendable {
-    /// Allow this tool call (hook returns permissionDecision "allow").
+    /// Allow this tool call using the CLI's event-specific decision format.
     case allow
     /// Deny it (hook returns "deny").
     case deny
@@ -11,7 +11,7 @@ enum ApprovalDecision: String, Sendable {
     case passthrough
 }
 
-/// One held PreToolUse call awaiting the user's verdict in the notch.
+/// One held permission request awaiting the user's verdict in the notch.
 struct PendingApproval: Identifiable, Equatable, Sendable {
     let id: String
     let sessionID: String
@@ -22,7 +22,7 @@ struct PendingApproval: Identifiable, Equatable, Sendable {
     let createdAt: Date
 }
 
-/// Coordinates blocking PreToolUse round-trips: the hook server parks the
+/// Coordinates blocking permission round-trips: the hook server parks the
 /// HTTP response here; the approval card resolves it. Fail-open by design —
 /// timeout or any uncertainty yields `.passthrough` so Claude Code's native
 /// prompt takes over.
@@ -32,7 +32,14 @@ final class ApprovalCenter: ObservableObject {
 
     /// Labs: skip notch approvals entirely (reference "Use Native Claude
     /// Code Approvals").
-    var useNativeApprovals = false
+    var useNativeApprovals = false {
+        didSet {
+            guard useNativeApprovals, !oldValue else { return }
+            sessionAllowlist.removeAll()
+            bypassedSessions.removeAll()
+            for approval in pending { finish(id: approval.id, decision: .passthrough) }
+        }
+    }
     /// How long a hook may stay parked before we fail open.
     var holdTimeoutSeconds: Double = 55
 
@@ -62,6 +69,7 @@ final class ApprovalCenter: ObservableObject {
     /// Whether to auto-answer "allow" without a card (session Always-Allow
     /// or Bypass granted earlier from the notch).
     func shouldAutoAllow(event: SessionEvent) -> Bool {
+        guard !useNativeApprovals else { return false }
         guard case .permissionRequest(let toolName, _, _, _) = event.kind else { return false }
         let sessionID = event.context.sessionID
         if bypassedSessions.contains(sessionID) { return true }
@@ -201,11 +209,12 @@ enum HookResponses {
         case .passthrough:
             return nil
         case .allow, .deny:
+            var verdict: [String: Any] = ["behavior": decision.rawValue]
+            if decision == .deny { verdict["message"] = reason }
             let payload: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": hookEventName,
-                    "permissionDecision": decision.rawValue,
-                    "permissionDecisionReason": reason
+                    "decision": verdict
                 ]
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return nil }

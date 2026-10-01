@@ -61,7 +61,7 @@ speak the same hook vocabulary, so they share one implementation.
 | **Claude Code** | Full — status, approvals, questions, completions, subagents, jump, usage. Verified against real sessions. |
 | **Codex** | Monitoring — status, subagents, rate limits, jump. **No approvals** (needs its hooks); sessions are read from the rollout files it already writes. |
 | **Qwen · Qoder · Trae · CodeBuddy · Droid · Copilot** | Hook-based, same dialect as Claude Code. Config shape verified on a machine that has each installed; not yet watched through a live session. |
-| **Cursor · Gemini CLI** | Hook-based, own dialects, written against each CLI's published hooks reference. Not verified against a live session. |
+| **Cursor · Gemini CLI** | Monitoring via hooks in their own dialects. Approvals stay in the native CLI. Written against published hooks references; not yet verified against live sessions. |
 
 Anything not listed is not supported — the app only advertises a CLI whose real
 configuration has been inspected.
@@ -85,6 +85,11 @@ Terminal/iTerm). If you use the usage pill, macOS asks once for Keychain access 
 token Claude Code already stored.
 
 > Hooks apply to **new** sessions. Restart any `claude` you already have running.
+
+Settings → Integrations has an enable switch for each agent. Turning an agent off
+removes Token Island's hooks and keeps it disabled after restarting; automatic setup
+respects that choice. If a configuration file is invalid, Token Island leaves it
+unchanged and reports the error. Correct the file, then choose Retry.
 
 Updates install themselves: the app checks a signed feed, and the menu bar shows
 *"Update available"* when there's something newer.

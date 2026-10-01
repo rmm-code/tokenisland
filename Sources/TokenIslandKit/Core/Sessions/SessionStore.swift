@@ -192,6 +192,25 @@ final class SessionStore: ObservableObject {
 
 
     /// Clears the approval state once the verdict is in.
+    func resolveApproval(sessionID: String, decision: ApprovalDecision, remaining: PendingApproval?) {
+        guard var session = sessionMap[sessionID], session.phase == .waitingApproval else { return }
+        if let remaining {
+            let detail = remaining.detail.map { ": \(SessionReducer.condense($0, limit: 80))" } ?? ""
+            session.pendingApprovalMessage = "Allow \(remaining.toolName)\(detail)?"
+            session.pendingApprovalPreview = remaining.preview
+            session.pendingApprovalSource = .notchVerdict
+        } else if decision == .passthrough {
+            // Timeout/native mode handed control to the CLI; it is still
+            // awaiting the user, not working. Keep the terminal jump visible.
+            session.pendingApprovalSource = .terminalOnly
+        } else {
+            clearApprovalPending(sessionID: sessionID)
+            return
+        }
+        sessionMap[sessionID] = session
+        publish()
+    }
+
     func clearApprovalPending(sessionID: String) {
         guard var session = sessionMap[sessionID], session.phase == .waitingApproval else { return }
         session.phase = .working

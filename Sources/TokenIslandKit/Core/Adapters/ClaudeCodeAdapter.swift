@@ -22,6 +22,8 @@ struct ClaudeCodeAdapter: CLIAdapter {
         claudeDirectory.appendingPathComponent("settings.json")
     }
 
+    private var settingsFile: HookSettingsFile { HookSettingsFile(url: settingsURL) }
+
     // MARK: - CLIAdapter
 
     func detect() -> Bool {
@@ -31,52 +33,29 @@ struct ClaudeCodeAdapter: CLIAdapter {
 
     func status(hookPort: UInt16) -> AdapterStatus {
         guard detect() else { return .notFound }
-        guard let settings = try? readSettings() else { return .needsSetup }
-        return ClaudeHookCommand.installState(settings: settings, port: hookPort)
+        do {
+            return ClaudeHookCommand.installState(settings: try settingsFile.read(), port: hookPort)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     func installHooks(hookPort: UInt16) throws {
-        let existing = (try? readSettings()) ?? [:]
-        try backupIfNeeded()
+        let existing = try settingsFile.read()
+        try settingsFile.backupIfNeeded()
         let merged = ClaudeHookCommand.mergedSettings(existing: existing, port: hookPort)
-        try writeSettings(merged)
+        try settingsFile.write(merged)
         AppLog.telemetry.info("Claude Code hooks installed (port \(hookPort))")
     }
 
     func uninstallHooks() throws {
-        guard let existing = try? readSettings() else { return }
+        guard fileManager.fileExists(atPath: settingsURL.path) else { return }
+        let existing = try settingsFile.read()
         let stripped = ClaudeHookCommand.strippedSettings(existing: existing)
-        try writeSettings(stripped)
+        try settingsFile.write(stripped)
     }
 
     // MARK: - Files
-
-    private func readSettings() throws -> [String: Any] {
-        guard fileManager.fileExists(atPath: settingsURL.path) else { return [:] }
-        let data = try Data(contentsOf: settingsURL)
-        guard !data.isEmpty else { return [:] }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AdapterFileError.unexpectedFormat(settingsURL.lastPathComponent)
-        }
-        return object
-    }
-
-    private func writeSettings(_ settings: [String: Any]) throws {
-        try fileManager.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(
-            withJSONObject: settings,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        try data.write(to: settingsURL, options: .atomic)
-    }
-
-    /// One-time safety copy before we ever touch the user's settings.
-    private func backupIfNeeded() throws {
-        let backupURL = claudeDirectory.appendingPathComponent("settings.json.tokenisland-backup")
-        guard fileManager.fileExists(atPath: settingsURL.path),
-              !fileManager.fileExists(atPath: backupURL.path) else { return }
-        try fileManager.copyItem(at: settingsURL, to: backupURL)
-    }
 
     private func binaryExists() -> Bool {
         let searchPaths = [
@@ -94,16 +73,4 @@ struct ClaudeCodeAdapter: CLIAdapter {
         else { return [] }
         return HookConfigBuilder.foreignApprovalHooks(settings: settings)
     }
-}
-
-enum AdapterFileError: Error, LocalizedError {
-    case unexpectedFormat(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .unexpectedFormat(let file):
-            "\(file) is not a JSON object — refusing to modify it."
-        }
-    }
-
 }

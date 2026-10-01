@@ -1,8 +1,7 @@
 import Foundation
 
-/// One adapter for every Claude-family CLI, driven by a `HookFamilyCLI`
-/// descriptor. Detection, install, repair and uninstall are identical across
-/// them; only paths and the hook-server route differ.
+/// Shared safe file handling for hook integrations. The descriptor chooses
+/// configuration paths and the dialect profile chooses the installed schema.
 struct HookFamilyAdapter: CLIAdapter {
     let cli: HookFamilyCLI
     private let homeDirectory: URL
@@ -19,6 +18,7 @@ struct HookFamilyAdapter: CLIAdapter {
     var agentKind: AgentKind { cli.agentKind }
 
     var settingsURL: URL { cli.settingsURL(homeDirectory: homeDirectory) }
+    private var settingsFile: HookSettingsFile { HookSettingsFile(url: settingsURL) }
 
     // MARK: - CLIAdapter
 
@@ -32,75 +32,42 @@ struct HookFamilyAdapter: CLIAdapter {
 
     func status(hookPort: UInt16) -> AdapterStatus {
         guard detect() else { return .notFound }
-        guard let settings = try? readSettings() else { return .needsSetup }
-        return HookConfigBuilder.installState(
-            settings: settings,
-            source: cli.source,
-            port: hookPort
-        )
+        do {
+            return HookConfigBuilder.installState(settings: try settingsFile.read(), source: cli.source, port: hookPort)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     func installHooks(hookPort: UInt16) throws {
-        let existing = (try? readSettings()) ?? [:]
-        try backupIfNeeded()
+        let existing = try settingsFile.read()
+        if case .sharedFile = cli.configStyle { try settingsFile.backupIfNeeded() }
         let merged = HookConfigBuilder.merged(
             existing: existing,
             source: cli.source,
             port: hookPort,
             disablesTerminalTitle: cli.disablesTerminalTitle
         )
-        try writeSettings(merged)
+        try settingsFile.write(merged)
         AppLog.telemetry.info("\(displayName) hooks installed (port \(hookPort))")
     }
 
     func uninstallHooks() throws {
+        guard fileManager.fileExists(atPath: settingsURL.path) else { return }
+        let stripped = HookConfigBuilder.stripped(existing: try settingsFile.read())
         switch cli.configStyle {
         case .ownFile:
-            // The whole file is ours; removing it leaves nothing behind.
-            try? fileManager.removeItem(at: settingsURL)
+            if stripped.isEmpty {
+                try fileManager.removeItem(at: settingsURL)
+            } else {
+                try settingsFile.write(stripped)
+            }
         case .sharedFile:
-            guard let existing = try? readSettings() else { return }
-            try writeSettings(HookConfigBuilder.stripped(existing: existing))
+            try settingsFile.write(stripped)
         }
     }
 
     // MARK: - Files
-
-    private func readSettings() throws -> [String: Any] {
-        guard fileManager.fileExists(atPath: settingsURL.path) else { return [:] }
-        let data = try Data(contentsOf: settingsURL)
-        guard !data.isEmpty else { return [:] }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AdapterFileError.unexpectedFormat(settingsURL.lastPathComponent)
-        }
-        return object
-    }
-
-    private func writeSettings(_ settings: [String: Any]) throws {
-        try fileManager.createDirectory(
-            at: settingsURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let data = try JSONSerialization.data(
-            withJSONObject: settings,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        try data.write(to: settingsURL, options: .atomic)
-    }
-
-    /// One-time safety copy before we ever touch a file we did not create.
-    private func backupIfNeeded() throws {
-        guard case .sharedFile = cli.configStyle else { return }
-        let backupURL = settingsURL
-            .deletingLastPathComponent()
-            .appendingPathComponent(settingsURL.lastPathComponent + ".tokenisland-backup")
-        guard fileManager.fileExists(atPath: settingsURL.path),
-              !fileManager.fileExists(atPath: backupURL.path)
-        else {
-            return
-        }
-        try fileManager.copyItem(at: settingsURL, to: backupURL)
-    }
 
     private func binaryExists() -> Bool {
         let roots = [
@@ -121,7 +88,7 @@ struct HookFamilyAdapter: CLIAdapter {
         guard let data = try? Data(contentsOf: settingsURL),
               let settings = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return [] }
-        return HookConfigBuilder.foreignApprovalHooks(settings: settings)
+        return HookConfigBuilder.foreignApprovalHooks(settings: settings, source: cli.source)
     }
 
 }

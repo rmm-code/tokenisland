@@ -726,3 +726,21 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   sifatly/taomly/eiuedu/tesol/mardonjon.me all still 200.
   Outstanding: no `www` DNS record; Cloudflare SSL mode should be Full (strict) now the
   origin has a real cert; backlinks and keyword-volume research need tools I don't have.
+
+- **2026-10-01 (integration reliability fixes after code audit)** — reproduced the
+  incorrect Claude PermissionRequest response schema, Cursor/Gemini installation
+  schemas, malformed-config overwrite, mixed-group ownership loss, restart opt-out
+  loss, and native-mode allowlist override. Corrected verdict serialization and
+  introduced per-dialect profiles plus shared strict configuration file handling.
+  Integration switches now persist disable/re-enable intent and update errors/status
+  immediately. Native mode releases parked calls; timeout leaves a terminal-waiting
+  card; resolving one of several requests preserves the remaining request's preview.
+  Cursor/Gemini tool gates monitor activity without parking every ordinary tool call;
+  approvals stay in their native CLI. Gemini selects a single source and drops cards
+  from a previous source on switches. HTTP tests use the production event handler.
+  Split the pre-existing 775-line reducer/router test file at its class boundary.
+  Validation: 238 tests pass, including real localhost round trips and fixture-only
+  config changes. Universal release bundle builds for arm64/x86_64. Local signing
+  verification passes outside the sandbox. No app launch or real CLI config edits.
+  Evidence/report: local `outputs/bug-reproducer-report.md` and evidence JSON.
+  Live third-party CLI behavior, VoiceOver, and a visual walkthrough remain unverified.

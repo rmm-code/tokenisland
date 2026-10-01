@@ -8,7 +8,7 @@ import XCTest
 ///
 /// This exists because "I pressed Allow and nothing happened" could not be
 /// reproduced by hand — every manual attempt hit the 55s timeout before the
-/// press landed. The sink below mirrors `AppEnvironment`'s wiring so the whole
+/// press landed. The sink uses `AppEnvironment`'s actual handler so the whole
 /// chain (park → verdict → serialize → respond) is covered without a UI.
 @MainActor
 final class ApprovalRoundTripTests: XCTestCase {
@@ -22,29 +22,8 @@ final class ApprovalRoundTripTests: XCTestCase {
         store: SessionStore,
         center: ApprovalCenter
     ) -> HookServer {
-        HookServer(port: port) { event in
-            enum Route { case none, hold(String), autoAllow }
-            let route = await MainActor.run { () -> Route in
-                store.apply(event)
-                guard case .permissionRequest = event.kind else { return .none }
-                if center.shouldAutoAllow(event: event) {
-                    store.clearApprovalPending(sessionID: event.context.sessionID)
-                    return .autoAllow
-                }
-                guard center.shouldHold(event: event) else { return .none }
-                return .hold(center.register(event: event))
-            }
-            switch route {
-            case .autoAllow:
-                return HookResponses.permission(.allow, reason: "Always allowed from the notch")
-            case .hold(let id):
-                let decision = await center.wait(id: id)
-                await MainActor.run { store.clearApprovalPending(sessionID: event.context.sessionID) }
-                return HookResponses.permission(decision, reason: "Decided from the notch")
-            case .none:
-                return nil
-            }
-        }
+        let handler = HookEventHandler(sessionStore: store, approvalCenter: center)
+        return HookServer(port: port) { event in await handler.handle(event) }
     }
 
     /// Starts the server on the first port that will actually bind.
@@ -122,7 +101,7 @@ final class ApprovalRoundTripTests: XCTestCase {
         await answer(center) { $0.approve(id: $1) }
 
         let body = try await reply
-        XCTAssertTrue(body.contains("\"permissionDecision\":\"allow\""), "body was: \(body)")
+        XCTAssertTrue(body.contains("\"behavior\":\"allow\""), "body was: \(body)")
         XCTAssertTrue(body.contains("\"hookEventName\":\"PermissionRequest\""), "body was: \(body)")
         // The phase must not be left stuck on waitingApproval after a verdict.
         XCTAssertEqual(store.sessions.first?.phase, .working)
@@ -140,7 +119,7 @@ final class ApprovalRoundTripTests: XCTestCase {
         await answer(center) { $0.deny(id: $1) }
 
         let body = try await reply
-        XCTAssertTrue(body.contains("\"permissionDecision\":\"deny\""), "body was: \(body)")
+        XCTAssertTrue(body.contains("\"behavior\":\"deny\""), "body was: \(body)")
     }
 
     /// Always-Allow has to survive into the NEXT request, with no card at all.
@@ -155,11 +134,11 @@ final class ApprovalRoundTripTests: XCTestCase {
         async let first = Self.post(port: boundPort, Self.permissionBody(toolUseID: "rt-always-1"))
         await answer(center) { $0.alwaysAllow(id: $1) }
         let firstBody = try await first
-        XCTAssertTrue(firstBody.contains("\"permissionDecision\":\"allow\""), "body was: \(firstBody)")
+        XCTAssertTrue(firstBody.contains("\"behavior\":\"allow\""), "body was: \(firstBody)")
 
         // Second one must answer itself immediately — no verdict given here.
         let second = try await Self.post(port: port, Self.permissionBody(toolUseID: "rt-always-2"))
-        XCTAssertTrue(second.contains("\"permissionDecision\":\"allow\""), "body was: \(second)")
+        XCTAssertTrue(second.contains("\"behavior\":\"allow\""), "body was: \(second)")
         XCTAssertTrue(center.pending.isEmpty, "auto-allow must not leave a card behind")
     }
 
@@ -174,8 +153,10 @@ final class ApprovalRoundTripTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
 
         let body = try await Self.post(port: port, Self.permissionBody(toolUseID: "rt-timeout"))
-        XCTAssertFalse(body.contains("permissionDecision"), "body was: \(body)")
+        XCTAssertFalse(body.contains("behavior"), "body was: \(body)")
         XCTAssertEqual(body, "{\"ok\":true}")
+        XCTAssertEqual(store.sessions.first?.phase, .waitingApproval)
+        XCTAssertEqual(store.sessions.first?.pendingApprovalSource, .terminalOnly)
     }
 
     /// The race the audit found: a verdict pressed before `wait` installs its
@@ -196,7 +177,7 @@ final class ApprovalRoundTripTests: XCTestCase {
 
         let started = Date()
         let body = try await reply
-        XCTAssertTrue(body.contains("\"permissionDecision\":\"allow\""), "body was: \(body)")
+        XCTAssertTrue(body.contains("\"behavior\":\"allow\""), "body was: \(body)")
         XCTAssertLessThan(Date().timeIntervalSince(started), 2, "verdict was lost and only the timeout released it")
     }
 }

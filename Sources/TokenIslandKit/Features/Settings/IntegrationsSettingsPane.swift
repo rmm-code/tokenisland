@@ -13,14 +13,12 @@ struct IntegrationsSettingsPane: View, SettingsPaneBindingProviding {
         VStack(alignment: .leading, spacing: 14) {
             SettingsCard(
                 title: "Agent integrations",
-                subtitle: "Claude uses managed hooks. Codex and Gemini are monitored passively from their local session files."
+                subtitle: "Connect your agents here. Agents you turn off stay off after restarting."
             ) {
-                ForEach(appState.adapterRegistry.entries) { entry in
-                    adapterRow(entry)
-                }
+                AgentIntegrationControls(appState: appState)
                 SettingsToggleRow(
-                    title: "Auto-configure Claude hooks",
-                    detail: "Install or repair the Claude integration when it is detected.",
+                    title: "Automatically connect new agents",
+                    detail: "Connect detected agents and repair enabled integrations. Agents you turn off stay off.",
                     isOn: boolBinding(\.autoConfigureNewCLIs, appState: appState)
                 )
             }
@@ -89,119 +87,6 @@ struct IntegrationsSettingsPane: View, SettingsPaneBindingProviding {
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             let granted = WindowLocator.hasAccessibilityPermission
             if granted != accessibilityGranted { accessibilityGranted = granted }
-        }
-    }
-
-    @ViewBuilder
-    private func adapterRow(_ entry: AdapterRegistry.Entry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Text(entry.adapter.displayName)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(TITheme.primaryText)
-                Spacer()
-                if entry.adapter.integrationMode == .passiveWatcher {
-                    passiveWatcherControl(entry)
-                } else {
-                    managedHookControl(entry)
-                }
-            }
-            conflictWarning(entry)
-        }
-        .padding(.vertical, 4)
-    }
-
-    /// Another app answering the same approvals is invisible from the notch —
-    /// it just looks like a verdict did nothing — so name it here.
-    @ViewBuilder
-    private func conflictWarning(_ entry: AdapterRegistry.Entry) -> some View {
-        let conflicts = entry.adapter.conflictingApprovalHooks()
-        if !conflicts.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(TITheme.warning)
-                Text("Also answering approvals: \(conflicts.joined(separator: ", ")). Only one app should — verdicts may not take effect.")
-                    .font(.caption)
-                    .foregroundStyle(TITheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func managedHookControl(_ entry: AdapterRegistry.Entry) -> some View {
-        Group {
-            switch entry.status {
-            case .active:
-                Label("Active", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(PetPalette.tint(for: .ready))
-                Button("Remove") {
-                    appState.adapterRegistry.uninstall(adapterID: entry.id)
-                }
-                .controlSize(.small)
-            case .needsSetup:
-                Button("Install hooks") {
-                    appState.adapterRegistry.install(adapterID: entry.id)
-                }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
-            case .needsRepair(let reason):
-                Text(reason)
-                    .font(.caption)
-                    .foregroundStyle(TITheme.warning)
-                Button("Repair") {
-                    appState.adapterRegistry.install(adapterID: entry.id)
-                }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
-            case .failed(let message):
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(TITheme.danger)
-                    .lineLimit(1)
-                Button("Retry") {
-                    appState.adapterRegistry.install(adapterID: entry.id)
-                }
-                .controlSize(.small)
-            case .detectedOnly:
-                Label("Detected", systemImage: "checkmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(PetPalette.tint(for: .ready).opacity(0.8))
-            case .notFound:
-                Text("CLI not found")
-                    .font(.caption)
-                    .foregroundStyle(TITheme.tertiaryText)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func passiveWatcherControl(_ entry: AdapterRegistry.Entry) -> some View {
-        if entry.status.isDetected {
-            let isEnabled = passiveMonitorBinding(for: entry.id)
-            Label(isEnabled.wrappedValue ? "Monitoring" : "Paused", systemImage: "waveform.path.ecg")
-                .font(.caption)
-                .foregroundStyle(isEnabled.wrappedValue ? PetPalette.tint(for: .working) : TITheme.tertiaryText)
-            Toggle("Monitor \(entry.adapter.displayName)", isOn: isEnabled)
-                .labelsHidden()
-                .accessibilityLabel("Monitor \(entry.adapter.displayName)")
-        } else {
-            Text("CLI not found")
-                .font(.caption)
-                .foregroundStyle(TITheme.tertiaryText)
-        }
-    }
-
-    private func passiveMonitorBinding(for adapterID: String) -> Binding<Bool> {
-        switch adapterID {
-        case "codex":
-            boolBinding(\.enableCodexMonitoring, appState: appState)
-        case "gemini-cli":
-            boolBinding(\.enableGeminiMonitoring, appState: appState)
-        default:
-            .constant(false)
         }
     }
 

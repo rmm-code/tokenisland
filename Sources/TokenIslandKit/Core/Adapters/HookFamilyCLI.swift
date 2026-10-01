@@ -11,7 +11,7 @@ struct HookFamilyCLI: Sendable, Equatable {
     /// downstream of the decoder is shared.
     enum Dialect: String, Sendable, Equatable {
         /// Claude Code and its derivatives: `PreToolUse`, `tool_name`,
-        /// `hookSpecificOutput.permissionDecision`.
+        /// `hookSpecificOutput.decision.behavior` for PermissionRequest.
         case claude
         /// Cursor: `preToolUse`, `beforeShellExecution`, `permission`.
         case cursor

@@ -24,6 +24,7 @@ final class AppState: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var hasStarted = false
     private var integrationsActive = false
+    private var isUsingGeminiFallback = false
 
     init(
         repository: UsageRepository,
@@ -52,6 +53,10 @@ final class AppState: ObservableObject {
         self.codexSessionWatcher = codexSessionWatcher
         self.geminiSessionWatcher = geminiSessionWatcher
         self.settings = settingsStore.load()
+        adapterRegistry.onIntegrationsChanged = { [weak self] in
+            guard let self else { return }
+            self.applyDerivedSettings(self.settings)
+        }
     }
 
     func start() async {
@@ -121,10 +126,25 @@ final class AppState: ObservableObject {
         } else {
             codexSessionWatcher.stop()
         }
-        if integrationsActive, settings.enableGeminiMonitoring {
+        // Hooks are Gemini's primary source. A passive fallback must not also
+        // replay its transcript as a second card with a different session id.
+        let useGeminiFallback = integrationsActive && settings.enableGeminiMonitoring
+            && adapterRegistry.isEnabled(agent: .gemini) && !adapterRegistry.hasActiveHooks(for: .gemini)
+        if useGeminiFallback != isUsingGeminiFallback {
+            // The two sources use different identities. Drop cards from the
+            // previous source instead of leaving them beside the new ones.
+            for session in sessionStore.sessions where session.agent == .gemini {
+                sessionStore.removeSession(withID: session.id)
+            }
+            isUsingGeminiFallback = useGeminiFallback
+        }
+        if useGeminiFallback {
             geminiSessionWatcher.start()
         } else {
             geminiSessionWatcher.stop()
+        }
+        for session in sessionStore.sessions where !adapterRegistry.isEnabled(agent: session.agent) {
+            sessionStore.removeSession(withID: session.id)
         }
     }
 
@@ -141,6 +161,9 @@ final class AppState: ObservableObject {
         settings = next
         settingsStore.save(next)
         applyDerivedSettings(next)
+        if integrationsActive, !previous.autoConfigureNewCLIs, next.autoConfigureNewCLIs {
+            adapterRegistry.autoConfigure()
+        }
         Task {
             if integrationsActive, telemetryConfigurationChanged(from: previous, to: next) {
                 await telemetryCoordinator.start(settings: next)

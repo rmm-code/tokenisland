@@ -79,11 +79,27 @@ final class HookServer: @unchecked Sendable {
                         body: Data(payload.utf8)
                     )
                 }
-                return .json(["ok": true])
+                if dialect == .cursor {
+                    if case .permissionRequest = event.kind {
+                        // No opinion/timeout: a non-success response makes
+                        // our curl wrapper exit 3 so Cursor's own policy runs.
+                        return .json(statusCode: 503, ["error": "Use native permissions"])
+                    }
+                    switch event.kind {
+                    case .preTool:
+                        return .json(["permission": "allow"])
+                    case .userPrompt:
+                        return .json(["continue": true])
+                    default:
+                        return .json([:])
+                    }
+                }
+                return .json(dialect == .gemini ? [:] : ["ok": true])
             } catch {
                 AppLog.telemetry.error("Hook decode failed: \(error)")
-                // Always 200 with no directive output: hooks must stay fail-open.
-                return .json(["ok": false])
+                // Cursor blocks invalid decision JSON even with exit 0. Its
+                // command wrapper translates HTTP failure to fail-open exit 3.
+                return .json(statusCode: dialect == .cursor ? 503 : 200, ["ok": false])
             }
 
         default:

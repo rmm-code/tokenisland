@@ -76,7 +76,7 @@ enum GeminiHookRouter {
                 )
             )
 
-        case "PreCompact":
+        case "PreCompress", "PreCompact":
             return .preCompact
 
         default:

@@ -55,6 +55,7 @@ struct HTTPResponse: Sendable {
         case 405: "Method Not Allowed"
         case 500: "Internal Server Error"
         case 502: "Bad Gateway"
+        case 503: "Service Unavailable"
         default: "OK"
         }
     }
