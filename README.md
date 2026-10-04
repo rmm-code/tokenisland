@@ -94,6 +94,12 @@ unchanged and reports the error. Correct the file, then choose Retry.
 Updates install themselves: the app checks a signed feed, and the menu bar shows
 *"Update available"* when there's something newer.
 
+Usage limits refresh every minute while visible. They use the account signed into
+Claude Code. Outdated percentages are hidden; the refresh button retries immediately,
+and **Connect** explicitly requests Keychain access when needed. Automatic checks
+never open an authentication prompt. Saved percentages from previous launches are
+discarded, so old account data cannot be mistaken for current limits.
+
 ## How it works
 
 ```

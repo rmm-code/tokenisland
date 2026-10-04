@@ -744,3 +744,24 @@ adapters (structure ready, one reference adapter shipped), session switcher HUD 
   verification passes outside the sandbox. No app launch or real CLI config edits.
   Evidence/report: local `outputs/bug-reproducer-report.md` and evidence JSON.
   Live third-party CLI behavior, VoiceOver, and a visual walkthrough remain unverified.
+
+- **2026-10-05 (usage limits freshness audit and fix)** — the installed app showed
+  the exact percentages from a September 17 snapshot (5h 1%, weekly 49%), with
+  overdue resets rendered as “soon”. Reproduced stale restoration, expired reset
+  wording, relative reset anchoring, and stale Codex records via focused tests.
+  Removed the account-independent persisted usage cache and process-lifetime
+  credential token. Added typed fetch/access failures, bounded rotation retry,
+  request deduplication, automatic visible-panel polling, wake/reset handling,
+  provider-directed Retry-After, and explicit Refresh/Connect controls. Old values
+  are hidden on failures, age expiry, and reset boundaries. Current Keychain login
+  wins over legacy files; automated paths remain noninteractive. Decoder shows
+  every valid reported model window and validates numbers/aliases. Split network,
+  credentials, decoding, service policy, and header presentation into cohesive files.
+  Validation: 269 workspace tests passed, including mock HTTP, clock and credential
+  cases. Signed universal v0.2.3 installed with user approval. The live API returned
+  401 for the old CLI login; Claude Code's own read-only /usage startup renewed it
+  after explicit workspace-trust approval. TokenIsland then received HTTP 200 and
+  displayed live 5h 39%, weekly 14%, with future reset dates. A live edge case led
+  to per-window expiry filtering so an expired optional limit cannot hide valid
+  primary limits. Expiry metadata supports seconds/ms; the server decides whether
+  a credential is accepted. No model prompt was sent and no token was logged.

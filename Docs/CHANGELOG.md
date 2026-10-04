@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.3 — 2026-10-05
+
+- Fixed stale Claude usage percentages surviving failed refreshes and app restarts.
+  Usage is fetched from the current Claude Code login; saved percentages are discarded.
+- Added automatic refresh while limits are visible, wake/reset handling, and a
+  separate Refresh/Connect action. Failed authentication, offline requests, rate
+  limits, and invalid responses are reported instead of silently retaining old values.
+- Hidden outdated and expired limits, and clarified used versus remaining values.
+- Read current Keychain credentials for each request; handle token rotation without
+  a process-lifetime token or unexpected authentication prompts.
+- Corrected relative reset dates, included all valid reported model limits, and
+  rejected invalid percentages and duplicate window aliases.
+- Fixed Codex usage freshness so unrelated rollout activity cannot revive an old
+  usage record or move its reset time forward.
+- Added HTTP, credential, clock, error, and concurrency regression coverage.
+
 ## 0.2.2 — 2026-10-01
 
 - Fixed Claude approval replies so Allow and Deny follow the PermissionRequest contract.

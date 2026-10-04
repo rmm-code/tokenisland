@@ -56,6 +56,28 @@ an extra confirmation. Answer their permission prompts in the native CLI.
 - Connect, Repair, or Retry runs setup for that agent. Errors are shown in full.
 - The local hook endpoint is `127.0.0.1:47791`; `GET /health` checks its availability.
 
+## Usage limits and freshness
+
+Claude usage is fetched through a read-only request using Claude Code's current
+login. Keychain is the primary macOS source; a legacy credentials file is used
+only when Keychain has no login, never to bypass denied access or shadow another
+account. No token or account usage snapshot is persisted by this integration.
+
+The header checks every 15 seconds and normally fetches Claude usage once per
+minute while visible. Data older than 90 seconds or past a reported reset is
+hidden. Wake and reset boundaries trigger refresh; HTTP Retry-After is respected.
+The refresh button can bypass the ordinary cooldown after a failed check.
+
+An explicit Connect action may request Keychain access. Automatic appearance,
+provider switching, timers, and wake never invoke interactive authentication.
+If a login expired, open Claude Code and refresh its login, then retry. Network,
+access, forbidden, rate-limit, and decode failures have distinct visible states
+and explanatory tooltips. Failed checks never retain percentages as current data.
+
+Codex limits are read from fresh, timestamped rate-limit records. File modification
+time alone is not proof of usage freshness; relative reset dates use the record's
+timestamp. Without a recent usable record, the header reports no recent usage.
+
 ## Optional legacy usage sources
 
 Session monitoring does not require OTLP or the OpenAI-compatible proxy. Both default

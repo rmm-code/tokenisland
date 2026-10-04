@@ -1,4 +1,6 @@
 import Foundation
+import LocalAuthentication
+import Security
 @testable import TokenIslandKit
 import XCTest
 
@@ -20,7 +22,7 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
         let object = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         )
-        return UsageLimitsService.snapshot(fromUsageJSON: object, fetchedAt: Date(timeIntervalSince1970: 0))
+        return ClaudeUsageDecoder.snapshot(fromUsageJSON: object, fetchedAt: Date())
     }
 
     /// The countdown never rendered because microsecond timestamps parsed to
@@ -61,11 +63,11 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.windows.map(\.label),
-            ["5h", "7d", "7d Fable"],
-            "session, then the weekly cap, then per-model caps — and no Opus, which Claude does not meter"
+            ["5h", "7d", "7d Fable", "7d Opus"],
+            "Every non-null usage window reported by the account reaches the display"
         )
-        XCTAssertEqual(snapshot.headerText, "5h 33% · 7d 55% · 7d Fable 12%")
-        XCTAssertEqual(snapshot.windows.first?.resetsAt, UsageLimitsService.parseTimestamp("2026-04-11T07:00:00Z"))
+        XCTAssertEqual(snapshot.headerText, "5h 33% · 7d 55% · 7d Fable 12% · 7d Opus 4%")
+        XCTAssertEqual(snapshot.windows.first?.resetsAt, ClaudeUsageDecoder.parseTimestamp("2026-04-11T07:00:00Z"))
         XCTAssertEqual(snapshot.fiveHourUsedPercent, 33, "the named accessors still resolve")
         XCTAssertEqual(snapshot.sevenDayUsedPercent, 55)
     }
@@ -78,28 +80,28 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
     }
 
     func testCamelCaseWindowKeysAreTreatedAsTheSameWindow() {
-        XCTAssertEqual(UsageLimitsService.normalizedKey("fiveHour"), "five_hour")
-        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "sevenDayFable"), "7d Fable")
+        XCTAssertEqual(ClaudeUsageDecoder.normalizedKey("fiveHour"), "five_hour")
+        XCTAssertEqual(ClaudeUsageDecoder.windowLabel(forKey: "sevenDayFable"), "7d Fable")
         // The endpoint ships the Fable cap under an internal codename; without
         // the mapping this renders as "Nimbus Quill" in the pill.
-        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "nimbus_quill"), "Fable 5")
-        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "nimbusQuill"), "Fable 5")
+        XCTAssertEqual(ClaudeUsageDecoder.windowLabel(forKey: "nimbus_quill"), "Fable 5")
+        XCTAssertEqual(ClaudeUsageDecoder.windowLabel(forKey: "nimbusQuill"), "Fable 5")
         XCTAssertEqual(
-            UsageLimitsService.windowLabel(forKey: "seven_day_nimbus_quill"),
+            ClaudeUsageDecoder.windowLabel(forKey: "seven_day_nimbus_quill"),
             "7d Fable 5"
         )
         // Unmapped keys must still degrade to something readable.
-        XCTAssertEqual(UsageLimitsService.windowLabel(forKey: "seven_day_widget"), "7d Widget")
+        XCTAssertEqual(ClaudeUsageDecoder.windowLabel(forKey: "seven_day_widget"), "7d Widget")
     }
 
     func testTimestampParsingAcceptsTheShapesTheEndpointCanSend() throws {
         // Microseconds + offset (what Anthropic actually sends).
-        XCTAssertNotNil(UsageLimitsService.parseTimestamp("2026-04-11T07:00:00.528743+00:00"))
+        XCTAssertNotNil(ClaudeUsageDecoder.parseTimestamp("2026-04-11T07:00:00.528743+00:00"))
         // Milliseconds, and no fractional part at all.
-        XCTAssertNotNil(UsageLimitsService.parseTimestamp("2026-04-11T07:00:00.528Z"))
-        XCTAssertNotNil(UsageLimitsService.parseTimestamp("2026-04-11T07:00:00Z"))
-        XCTAssertNil(UsageLimitsService.parseTimestamp("not a date"))
-        XCTAssertNil(UsageLimitsService.parseTimestamp(""))
+        XCTAssertNotNil(ClaudeUsageDecoder.parseTimestamp("2026-04-11T07:00:00.528Z"))
+        XCTAssertNotNil(ClaudeUsageDecoder.parseTimestamp("2026-04-11T07:00:00Z"))
+        XCTAssertNil(ClaudeUsageDecoder.parseTimestamp("not a date"))
+        XCTAssertNil(ClaudeUsageDecoder.parseTimestamp(""))
     }
 
     /// Windows can be absent or JSON null; neither may crash or invent a date.
@@ -125,7 +127,7 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testUsageServiceRestoresLastSuccessfulSnapshotImmediately() async throws {
+    func testUsageServiceDiscardsAccountIndependentSavedSnapshot() async throws {
         let suiteName = "UsageLimitsPromptPolicyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -153,16 +155,16 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
 
         let service = UsageLimitsService(defaults: defaults)
 
-        XCTAssertEqual(service.snapshot, expected)
+        XCTAssertNil(service.snapshot)
     }
 
     func testExpandedPanelAutomaticallyUsesSafeRefreshWithoutTapRequiredState() throws {
         let source = try sourceFile(
-            "Sources/TokenIslandKit/Features/NotchUI/ExpandedPanelView.swift"
+            "Sources/TokenIslandKit/Features/NotchUI/PanelHeaderView.swift"
         )
         let expandedPanel = try sourceSection(
             source,
-            beginningWith: "struct ExpandedPanelView"
+            beginningWith: "struct PanelHeaderView"
         )
         let automaticLifecycle = lifecycleBlocks(in: expandedPanel)
 
@@ -219,51 +221,20 @@ final class UsageLimitsPromptPolicyTests: XCTestCase {
         )
     }
 
-    func testAutomaticCredentialLookupUsesOnlyNoninteractiveKeychainFallback() throws {
-        let source = try sourceFile(
-            "Sources/TokenIslandKit/Core/UsageLimits/UsageLimitsService.swift"
-        )
-        var keychainWasRead = false
-        let token = UsageLimitsService.resolveAccessToken(
-            credentialsFileURL: URL(fileURLWithPath: "/missing/claude-credentials.json"),
-            allowsKeychainFallback: true,
-            keychainReader: {
-                keychainWasRead = true
-                return Self.credentialsData
-            }
-        )
-
-        XCTAssertEqual(token, "test-token")
-        XCTAssertTrue(keychainWasRead)
-        XCTAssertTrue(
-            source.contains("interactionNotAllowed = true") &&
-                source.contains("kSecUseAuthenticationContext as String"),
-            "Automatic Keychain fallback must fail silently instead of displaying a password prompt"
-        )
-        XCTAssertTrue(
-            source.contains("allowsInteraction: false"),
-            "The automatic refresh path must explicitly select noninteractive Keychain access"
-        )
+    func testAutomaticCredentialLookupUsesOnlyNoninteractiveKeychainFallback() {
+        let query = ClaudeUsageCredentials.keychainQuery(allowsInteraction: false)
+        let context = query[kSecUseAuthenticationContext as String] as? LAContext
+        XCTAssertTrue(context?.interactionNotAllowed == true)
     }
 
-    func testUserInitiatedCredentialLookupMayReadKeychainFallback() {
-        var keychainWasRead = false
-        let token = UsageLimitsService.resolveAccessToken(
-            credentialsFileURL: URL(fileURLWithPath: "/missing/claude-credentials.json"),
-            allowsKeychainFallback: true,
-            keychainReader: {
-                keychainWasRead = true
-                return Self.credentialsData
-            }
-        )
-
-        XCTAssertEqual(token, "test-token")
-        XCTAssertTrue(keychainWasRead)
+    func testUserInitiatedCredentialLookupMayReadKeychainFallback() throws {
+        let query = ClaudeUsageCredentials.keychainQuery(allowsInteraction: true)
+        XCTAssertNil(query[kSecUseAuthenticationContext as String])
+        let credential = try ClaudeUsageCredentials.decode(Data(
+            #"{"claudeAiOauth":{"accessToken":"test-token"}}"#.utf8
+        ))
+        XCTAssertEqual(credential.accessToken, "test-token")
     }
-
-    private static let credentialsData = Data(
-        #"{"claudeAiOauth":{"accessToken":"test-token"}}"#.utf8
-    )
 
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)

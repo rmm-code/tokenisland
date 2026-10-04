@@ -8,7 +8,7 @@ struct UsageSettingsPane: View, SettingsPaneBindingProviding {
             SettingsCard(title: "Usage Limits") {
                 SettingsToggleRow(
                     title: "Show Usage Limits",
-                    detail: "Show Claude and Codex limits. Automatic refresh never displays Keychain authentication; activating unavailable Claude usage can request access explicitly.",
+                    detail: "Refresh limits every minute while visible. Claude limits use the Claude Code login; Connect can request Keychain access explicitly. Unavailable or outdated percentages stay hidden.",
                     isOn: boolBinding(\.showUsageLimitsHeader, appState: appState)
                 )
                 SettingsRow(
